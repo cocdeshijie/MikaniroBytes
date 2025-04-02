@@ -1,10 +1,12 @@
 from fastapi import FastAPI
 from sqlalchemy.orm import Session
+
 from app.db.database import engine, SessionLocal
 from app.db.base_class import Base
 from app.db.models import *
 from app.utils.init_super_admin import ensure_super_admin
 from contextlib import asynccontextmanager
+from app.routers import auth
 
 
 @asynccontextmanager
@@ -14,9 +16,8 @@ async def lifespan(app: FastAPI):
     with SessionLocal() as db:
         ensure_super_admin(db)
 
-    yield  # Hand control over to the app
-
-    # Run on shutdown (optional cleanup)
+    yield
+    # shutdown logic if needed
 
 
 def create_app() -> FastAPI:
@@ -28,6 +29,8 @@ def create_app() -> FastAPI:
         A simple health check or 'ping' endpoint.
         """
         return {"message": "pong"}
+
+    app.include_router(auth.router, prefix="/auth", tags=["auth"])
 
     return app
 

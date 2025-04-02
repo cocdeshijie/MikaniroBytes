@@ -1,7 +1,8 @@
 from sqlalchemy import Column, Integer, ForeignKey, Boolean
 from sqlalchemy.dialects.sqlite import JSON as SQLiteJSON
 from sqlalchemy.orm import relationship
-from ..base_class import Base
+
+from app.db.base_class import Base
 
 
 class GroupSettings(Base):

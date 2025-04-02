@@ -9,8 +9,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.sqlite import JSON as SQLiteJSON
 
-from ..base_class import Base
-from .storage_enums import FileType, StorageType
+from app.db.base_class import Base
+from app.db.models.storage_enums import FileType, StorageType
 
 
 class File(Base):

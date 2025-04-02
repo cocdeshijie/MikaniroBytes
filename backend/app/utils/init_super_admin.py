@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 from app.db.models.user import User
 from app.db.models.group import Group
 from app.db.models.group_settings import GroupSettings
+from app.utils.security import hash_password
 
 
 def ensure_super_admin(db: Session):
@@ -27,7 +28,7 @@ def ensure_super_admin(db: Session):
     if not existing_superadmin_user:
         # Prompt for username/password or set defaults
         username = "admin"  # or ask input
-        hashed_password = "admin"  # obviously do real hashing
+        hashed_password = hash_password("admin")  # obviously do real hashing
         new_user = User(
             username=username,
             hashed_password=hashed_password,
