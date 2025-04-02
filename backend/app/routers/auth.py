@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
@@ -12,20 +13,29 @@ from app.utils.security import verify_password, hash_password
 router = APIRouter()
 
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class LogoutRequest(BaseModel):
+    token: str
+
+
 @router.post("/login")
-def login(username: str, password: str, db: Session = Depends(get_db)):
+def login(payload: LoginRequest, db: Session = Depends(get_db)):
     """
-    Basic login with username and password.
+    Basic login with username and password (JSON body).
     Generates a new session token if successful.
     """
-    user = db.query(User).filter(User.username == username).first()
+    user = db.query(User).filter(User.username == payload.username).first()
     if not user:
         raise HTTPException(status_code=400, detail="Invalid username or password.")
 
     if not user.hashed_password:
         raise HTTPException(status_code=400, detail="User has no password set.")
 
-    if not verify_password(password, user.hashed_password):
+    if not verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=400, detail="Invalid username or password.")
 
     # Create a new session record
@@ -43,13 +53,12 @@ def login(username: str, password: str, db: Session = Depends(get_db)):
         "token_type": "bearer",
     }
 
-
 @router.post("/logout")
-def logout(token: str, db: Session = Depends(get_db)):
+def logout(payload: LogoutRequest, db: Session = Depends(get_db)):
     """
-    Logout by deleting the session corresponding to the given token.
+    Logout by deleting the session corresponding to the given token (JSON body).
     """
-    session = db.query(UserSession).filter(UserSession.token == token).first()
+    session = db.query(UserSession).filter(UserSession.token == payload.token).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found.")
 
@@ -57,14 +66,11 @@ def logout(token: str, db: Session = Depends(get_db)):
     db.commit()
     return {"detail": "Logged out."}
 
-
 @router.get("/sessions")
 def get_sessions(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """
     Return a list of the current user's active sessions.
-    current_user dependency needs to check the token belongs to them.
     """
-    # We'll define how to get current_user from a token in a separate function.
     sessions = db.query(UserSession).filter(UserSession.user_id == current_user.id).all()
     return [
         {
@@ -76,11 +82,10 @@ def get_sessions(current_user: User = Depends(get_current_user), db: Session = D
         for s in sessions
     ]
 
-
 @router.delete("/sessions/{session_id}")
 def revoke_session(session_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """
-    Revoke a specific session by ID (belongs to the current user).
+    Revoke a specific session by ID (must belong to the current user).
     """
     session = db.query(UserSession).filter(UserSession.id == session_id).first()
     if not session:

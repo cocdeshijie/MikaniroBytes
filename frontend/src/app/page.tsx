@@ -1,100 +1,93 @@
+"use client";
+
 import Image from "next/image";
+import { useAtom } from "jotai";
+import { tokenAtom } from "@/atoms/auth";
+import Link from "next/link";
 
 export default function Home() {
+  const [token] = useAtom(tokenAtom);
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
+    <div className="relative min-h-screen bg-theme-50 dark:bg-theme-950">
+
+      {/* Hero section */}
+      <div className="flex flex-col items-center justify-center px-6 py-20 sm:py-32">
         <Image
-          className="dark:invert"
+          className="dark:invert mb-8"
           src="https://nextjs.org/icons/next.svg"
           alt="Next.js logo"
-          width={180}
-          height={38}
+          width={200}
+          height={40}
           priority
         />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="https://nextjs.org/icons/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+        <h1 className="text-4xl font-extrabold text-center text-theme-900 dark:text-theme-100 mb-4">
+          Welcome to FileBed!
+        </h1>
+        <p className="max-w-2xl text-center text-theme-700 dark:text-theme-300 text-lg mb-8">
+          Host and manage your files with the power of FastAPI + Next.js.
+        </p>
+
+        {/* CTA buttons */}
+        <div className="flex gap-4">
+          {!token ? (
+            <>
+              <Link
+                href="/login"
+                className="px-6 py-3 bg-theme-500 text-white rounded-full shadow hover:bg-theme-600 transition-colors"
+              >
+                Login
+              </Link>
+              <Link
+                href="#features"
+                className="px-6 py-3 bg-white dark:bg-theme-900 rounded-full
+                          text-theme-800 dark:text-theme-200
+                          ring-1 ring-theme-600/30 dark:ring-theme-300/20
+                          hover:bg-theme-100 dark:hover:bg-theme-800
+                          transition-colors"
+              >
+                Learn More
+              </Link>
+            </>
+          ) : (
+            <Link
+              href="/user"
+              className="px-6 py-3 bg-theme-500 text-white rounded-full shadow hover:bg-theme-600 transition-colors"
+            >
+              Go to Dashboard
+            </Link>
+          )}
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
+      </div>
+
+      {/* Features section (anchor = #features) */}
+      <div
+        id="features"
+        className="bg-theme-100 dark:bg-theme-900 py-10 px-6 min-h-[40vh]"
+      >
+        <h2 className="text-2xl font-semibold mb-6 text-theme-900 dark:text-theme-100">
+          Features
+        </h2>
+        <ul className="list-disc list-inside space-y-3 text-theme-700 dark:text-theme-300">
+          <li>Upload and manage files locally or in the cloud</li>
+          <li>Support for multiple file types (images, videos, etc.)</li>
+          <li>Flexible user roles and permissions</li>
+          <li>Seamless integration with Next.js front-end</li>
+          <li>Powered by FastAPI for high-performance backend</li>
+        </ul>
+      </div>
+
+      {/* Footer */}
+      <footer
+        className="text-center py-4 bg-theme-50 dark:bg-theme-950
+                   text-theme-600 dark:text-theme-400"
+      >
+        <p>
+          Made with&nbsp;
+          <span className="text-red-500">&hearts;</span>
+          &nbsp; by You
+        </p>
       </footer>
     </div>
   );
