@@ -1,14 +1,25 @@
 import { atom } from "jotai";
 
-/** Error handling if needed */
-export const loginErrorAtom = atom<string>("");
+/** Basic user info retrieved from /auth/me */
+export interface UserInfo {
+  id: number;
+  username: string;
+  email?: string;
+}
 
-/**
- * Track user sessions (array of sessions from the backend)
- */
-export const sessionsAtom = atom<any[]>([]);
+export const userInfoAtom = atom<UserInfo | null>(null);
 
-/**
- * A basic loading indicator for user data
- */
-export const loadingAtom = atom<boolean>(true);
+export interface SessionItem {
+  session_id: number;
+  token: string;
+  ip_address?: string;
+  client_name?: string;
+  created_at: string;
+  last_accessed: string;
+}
+
+export const sessionsAtom = atom<SessionItem[]>([]);
+
+export const loadingAtom = atom<boolean>(false);
+export const errorAtom = atom<string>("");
+
