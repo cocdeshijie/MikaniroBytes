@@ -17,11 +17,11 @@ declare module "next-auth" {
 }
 
 // Example host for your FastAPI:
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
 
 const handler = NextAuth({
   // You MUST set a strong secret in production
-  secret: process.env.NEXTAUTH_SECRET || "CHANGE_THIS_IN_PROD",
+  secret: process.env.NEXTAUTH_SECRET,
   session: {
     // We'll store sessions in a signed cookie (JWT-based).
     strategy: "jwt",

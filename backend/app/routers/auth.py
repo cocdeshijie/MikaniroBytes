@@ -27,6 +27,10 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
 
 
+class TokenCheckRequest(BaseModel):
+    token: str
+
+
 @router.post("/login")
 def login(payload: LoginRequest,
           request: Request,
@@ -165,3 +169,13 @@ def change_password(payload: ChangePasswordRequest,
     db.refresh(current_user)
 
     return {"detail": "Password changed successfully"}
+
+
+@router.post("/check-session")
+def check_session(payload: TokenCheckRequest, db: Session = Depends(get_db)):
+    """
+    Return {"valid": True} if the token is still in user_sessions table,
+    otherwise {"valid": False}.
+    """
+    session = db.query(UserSession).filter_by(token=payload.token).first()
+    return {"valid": session is not None}
