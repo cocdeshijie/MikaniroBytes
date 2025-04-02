@@ -1,63 +1,47 @@
 "use client";
 
-import { FormEvent, useEffect } from "react";
-import { useAtom } from "jotai";
+import { FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import {
-  usernameAtom,
-  passwordAtom,
-  tokenAtom,
-  loginErrorAtom,
-} from "@/atoms/auth";
+import { signIn, useSession } from "next-auth/react";
+import { useAtom, atom } from "jotai";
+
+const usernameAtom = atom("");
+const passwordAtom = atom("");
+const errorMsgAtom = atom("");
 
 /**
- * Example Login Page using Jotai.
- * Adjust styling & classes to match your existing UI approach.
+ * Example Login Page with NextAuth credentials.
  */
 export default function LoginPage() {
   const router = useRouter();
+  const { data: session, status } = useSession();
 
   const [username, setUsername] = useAtom(usernameAtom);
   const [password, setPassword] = useAtom(passwordAtom);
-  const [token, setToken] = useAtom(tokenAtom);
-  const [loginError, setLoginError] = useAtom(loginErrorAtom);
-
-  // If we already have a token in memory, redirect to /user
-  useEffect(() => {
-    if (token) {
-      router.replace("/user");
-    }
-  }, [token, router]);
+  const [errorMsg, setErrorMsg] = useAtom(errorMsgAtom);
 
   async function handleLogin(e: FormEvent) {
     e.preventDefault();
-    setLoginError(""); // clear any old errors
+    setErrorMsg("");
 
     try {
-      const response = await fetch("http://localhost:8000/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+      // NextAuth credentials signIn
+      const res = await signIn("credentials", {
+        username,
+        password,
+        redirect: false, // we'll handle the redirect manually
       });
 
-      if (!response.ok) {
-        throw new Error("Invalid credentials or server error");
+      if (res?.error) {
+        // e.g. "Invalid credentials"
+        setErrorMsg(res.error);
+        return;
       }
 
-      const data = await response.json();
-      // Example data: { access_token: "...", token_type: "bearer" }
-
-      // Put token in Jotai store
-      setToken(data.access_token);
-
-      // Clear fields
-      setUsername("");
-      setPassword("");
-
-      // Redirect to user dashboard
+      // If login was successful, redirect to user dashboard
       router.push("/user");
     } catch (err: any) {
-      setLoginError(err?.message ?? "Login failed.");
+      setErrorMsg(err?.message ?? "Login failed.");
     }
   }
 
@@ -71,9 +55,9 @@ export default function LoginPage() {
           Login
         </h1>
 
-        {loginError && (
+        {errorMsg && (
           <div className="bg-red-100 text-red-700 p-2 mb-4 rounded">
-            {loginError}
+            {errorMsg}
           </div>
         )}
 

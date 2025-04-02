@@ -1,16 +1,14 @@
 "use client";
 
 import Image from "next/image";
-import { useAtom } from "jotai";
-import { tokenAtom } from "@/atoms/auth";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 
 export default function Home() {
-  const [token] = useAtom(tokenAtom);
+  const { data: session } = useSession();
 
   return (
     <div className="relative min-h-screen bg-theme-50 dark:bg-theme-950">
-
       {/* Hero section */}
       <div className="flex flex-col items-center justify-center px-6 py-20 sm:py-32">
         <Image
@@ -31,7 +29,7 @@ export default function Home() {
 
         {/* CTA buttons */}
         <div className="flex gap-4">
-          {!token ? (
+          {!session?.accessToken ? (
             <>
               <Link
                 href="/login"

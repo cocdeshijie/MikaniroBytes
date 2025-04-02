@@ -1,28 +1,26 @@
 "use client";
 
-import { useAtom } from "jotai";
-import { useRouter } from "next/navigation";
-import { tokenAtom } from "@/atoms/auth";
 import { BiMoon, BiSun } from "react-icons/bi";
 import { useTheme } from "next-themes";
+import { signOut, useSession } from "next-auth/react";
 
 export default function Header() {
-  const router = useRouter();
-  const [token, setToken] = useAtom(tokenAtom);
+  const { data: session } = useSession();
   const { theme, setTheme } = useTheme();
 
-  // Logout function clears token and localStorage, then redirects to homepage
-  const handleLogout = async () => {
-    // If you have a real logout endpoint:
-    // await fetch("http://localhost:8000/auth/logout", { ... });
-    setToken(null);
-    localStorage.removeItem("token");
-    router.push("/");
-  };
-
-  // Toggle between light and dark modes (just an example)
   const toggleTheme = () => {
     setTheme(theme === "dark" ? "light" : "dark");
+  };
+
+  const handleLogout = async () => {
+    // If you'd like to also call your backend /auth/logout, do so here:
+    await fetch("http://localhost:8000/auth/logout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: session?.accessToken }),
+    });
+    // Then sign out from NextAuth:
+    await signOut();
   };
 
   return (
@@ -37,7 +35,7 @@ export default function Header() {
         {theme === "dark" ? <BiSun size={20} /> : <BiMoon size={20} />}
       </button>
 
-      {token && (
+      {session?.accessToken && (
         <button
           onClick={handleLogout}
           className="px-4 py-2 bg-red-600 text-white rounded-full
