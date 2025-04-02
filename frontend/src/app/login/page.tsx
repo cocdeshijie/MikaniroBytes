@@ -50,9 +50,6 @@ export default function LoginPage() {
       // Put token in Jotai store
       setToken(data.access_token);
 
-      // Optional: also store token in localStorage so user remains logged in on reload
-      localStorage.setItem("token", data.access_token);
-
       // Clear fields
       setUsername("");
       setPassword("");
