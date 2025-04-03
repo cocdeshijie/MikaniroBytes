@@ -32,7 +32,7 @@ export default function Home() {
           {!session?.accessToken ? (
             <>
               <Link
-                href="/login"
+                href="/auth/login"
                 className="px-6 py-3 bg-theme-500 text-white rounded-full shadow hover:bg-theme-600 transition-colors"
               >
                 Login

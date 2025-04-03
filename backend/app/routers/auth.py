@@ -1,13 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 import uuid
 from datetime import datetime
 
 from app.db.database import get_db
 from app.db.models.user import User
+from app.db.models.group import Group
 from app.db.models.user_session import UserSession
-from app.utils.security import verify_password
+from app.utils.security import verify_password, hash_password
 from app.dependencies.auth import get_current_user
 
 router = APIRouter()
@@ -29,6 +30,12 @@ class ChangePasswordRequest(BaseModel):
 
 class TokenCheckRequest(BaseModel):
     token: str
+
+
+class RegisterRequest(BaseModel):
+    username: str
+    email: EmailStr | None = None  # or just str if you want
+    password: str
 
 
 @router.post("/login")
@@ -179,3 +186,46 @@ def check_session(payload: TokenCheckRequest, db: Session = Depends(get_db)):
     """
     session = db.query(UserSession).filter_by(token=payload.token).first()
     return {"valid": session is not None}
+
+
+@router.post("/register")
+def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+    """
+    Register a new user account.
+    For example, default them to the 'FREE_USER' group if it exists.
+    """
+
+    # 1) Check if username already exists
+    existing_user = db.query(User).filter(User.username == payload.username).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Username already taken.")
+
+    # 2) Optional: check if email is used
+    if payload.email:
+        email_in_use = db.query(User).filter(User.email == payload.email).first()
+        if email_in_use:
+            raise HTTPException(status_code=400, detail="Email already in use.")
+
+    # 3) Find or create a "FREE_USER" group (adjust as needed)
+    free_group = db.query(Group).filter(Group.name == "FREE_USER").first()
+    if not free_group:
+        # If it doesn't exist, create it (or handle differently)
+        free_group = Group(name="FREE_USER")
+        db.add(free_group)
+        db.commit()
+        db.refresh(free_group)
+        # You may also create group_settings for them, if necessary
+
+    # 4) Create the user
+    new_user = User(
+        username=payload.username,
+        email=payload.email,
+        hashed_password=hash_password(payload.password),
+        group_id=free_group.id  # or None if you don’t care
+    )
+
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    return {"detail": "User registered successfully", "username": new_user.username}

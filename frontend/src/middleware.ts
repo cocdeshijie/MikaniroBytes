@@ -5,14 +5,14 @@ export async function middleware(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
   if (!token || !token.accessToken) {
     // No token => redirect to /login
-    return NextResponse.redirect(new URL("/login", req.url));
+    return NextResponse.redirect(new URL("/auth/login", req.url));
   }
 
   // Call FastAPI to see if token is valid
   const isValid = await checkTokenInDB(token.accessToken as string);
   if (!isValid) {
     // **Token invalid** => remove NextAuth cookies & redirect
-    const response = NextResponse.redirect(new URL("/login", req.url));
+    const response = NextResponse.redirect(new URL("/auth/login", req.url));
 
     // Expire both possible cookie names
     response.cookies.set("next-auth.session-token", "", {

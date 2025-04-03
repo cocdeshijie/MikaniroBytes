@@ -29,7 +29,7 @@ export default function UserPage() {
   // 1) If user is unauthenticated, redirect to /login
   useEffect(() => {
     if (status === "unauthenticated") {
-      router.replace("/login");
+      router.replace("/auth/login");
     }
   }, [status, router]);
 

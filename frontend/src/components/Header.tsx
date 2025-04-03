@@ -25,6 +25,7 @@ export default function Header() {
 
   return (
     <div className="fixed top-3 right-3 flex items-center gap-3 z-50">
+      {/* Theme Toggle */}
       <button
         onClick={toggleTheme}
         className="p-2 rounded-full bg-white/70 dark:bg-black/30
@@ -35,7 +36,8 @@ export default function Header() {
         {theme === "dark" ? <BiSun size={20} /> : <BiMoon size={20} />}
       </button>
 
-      {session?.accessToken && (
+      {session?.accessToken ? (
+        // If authenticated => show Logout button
         <button
           onClick={handleLogout}
           className="px-4 py-2 bg-red-600 text-white rounded-full
@@ -43,6 +45,24 @@ export default function Header() {
         >
           Logout
         </button>
+      ) : (
+        // If NOT authenticated => show "Login" and "Register" links
+        <div className="flex gap-2">
+          <a
+            href="/auth/login"
+            className="px-4 py-2 bg-blue-600 text-white rounded-full
+                       hover:bg-blue-700 transition-colors shadow-md"
+          >
+            Login
+          </a>
+          <a
+            href="/auth/register"
+            className="px-4 py-2 bg-gray-600 text-white rounded-full
+                       hover:bg-gray-700 transition-colors shadow-md"
+          >
+            Register
+          </a>
+        </div>
       )}
     </div>
   );
