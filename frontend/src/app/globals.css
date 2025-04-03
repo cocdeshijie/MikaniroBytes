@@ -2,26 +2,63 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+
+.light {
+    --scrollbar: theme('colors.theme.500');
+    --scrollbar-bg: theme('colors.theme.200');
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+.dark {
+    --scrollbar: theme('colors.theme.500');
+    --scrollbar-bg: theme('colors.theme.800');
 }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+/* Base scrollbar hiding for all devices */
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
+.no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+/* Device-specific scrollbar handling */
+@media (hover: hover) {
+    /* Only apply to devices with hover capability (typically desktop/laptop) */
+    ::-webkit-scrollbar {
+        display: none;
+    }
+
+    * {
+        scrollbar-width: none;
+    }
+
+    /* Custom scrollbar container */
+    .custom-scrollbar {
+        @apply fixed right-0 top-0;
+        width: 6px;
+        height: 100vh;
+        background-color: var(--scrollbar-bg);
+        z-index: 50;
+        pointer-events: none;
+        display: block;
+    }
+}
+
+/* Mobile and tablet specific styles */
+@media (hover: none) {
+    /* Hide custom scrollbar on touch devices */
+    .custom-scrollbar {
+        display: none;
+    }
+
+    /* Let the native scrollbar show on touch devices */
+    ::-webkit-scrollbar {
+        display: block;
+    }
+
+    * {
+        scrollbar-width: auto;
+    }
 }
