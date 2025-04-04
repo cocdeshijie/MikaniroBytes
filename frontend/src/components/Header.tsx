@@ -87,7 +87,8 @@ const MobileNavDialog = () => {
 
   // Only show user dashboard when logged in
   if (session?.accessToken) {
-    navItems.push({ title: "Dashboard", href: "/user" });
+    navItems.push({ title: "Dashboard", href: "/dashboard" });
+    navItems.push({ title: "Profile", href: "/profile" });
   }
 
   return (
@@ -180,7 +181,8 @@ const Header = () => {
 
   // Only show user dashboard when logged in
   if (session?.accessToken) {
-    navItems.push({ title: "Dashboard", href: "/user" });
+    navItems.push({ title: "Dashboard", href: "/dashboard" });
+    navItems.push({ title: "Profile", href: "/profile" });
   }
 
   return (

@@ -56,7 +56,7 @@ export default function RegisterPage() {
       }
 
       // 3) If signIn was successful, go to /user
-      router.push("/user");
+      router.push("/profile");
     } catch (err: any) {
       setErrorMsg(err.message || "Registration error");
     }

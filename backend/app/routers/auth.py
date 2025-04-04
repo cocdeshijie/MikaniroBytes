@@ -149,10 +149,17 @@ def get_me(current_user: User = Depends(get_current_user)):
     """
     Return basic user info (e.g. username, email).
     """
+    group_data = None
+    if current_user.group:
+        group_data = {
+            "id": current_user.group.id,
+            "name": current_user.group.name,
+        }
     return {
         "id": current_user.id,
         "username": current_user.username,
         "email": current_user.email,
+        "group": group_data,
     }
 
 

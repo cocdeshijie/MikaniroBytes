@@ -40,7 +40,7 @@ export default function LoginPage() {
       }
 
       // If login was successful, redirect to user dashboard
-      router.push("/user");
+      router.push("/profile");
     } catch (err: any) {
       setErrorMsg(err?.message ?? "Login failed.");
     }
