@@ -12,6 +12,7 @@ from app.utils.init_super_admin import ensure_super_admin
 # Routers
 from app.routers import auth
 from app.routers import files
+from app.routers import admin
 
 
 @asynccontextmanager
@@ -50,6 +51,7 @@ def create_app() -> FastAPI:
     # Register routers
     app.include_router(auth.router, prefix="/auth", tags=["auth"])
     app.include_router(files.router, prefix="/files", tags=["files"])
+    app.include_router(admin.router, prefix="/admin", tags=["admin"])
 
     return app
 

@@ -5,86 +5,66 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { atom, useAtom } from "jotai";
 import { cn } from "@/utils/cn";
+import MyImagesTab from "./components/MyImagesTab";
+import SiteSettingsTab from "./components/SiteSettingsTab";
 
-// Main tab: either "my-images" or "site-settings"
+// Dashboard tabs
 const mainTabAtom = atom<"my-images" | "site-settings">("my-images");
-
-// Sub-tab for site settings: "groups", "users", or "configs"
 const siteSubTabAtom = atom<"groups" | "users" | "configs">("groups");
 
-// Flag if user is admin
+// Are we a SUPER_ADMIN or not?
 const isAdminAtom = atom<boolean>(false);
 
-// Optional: store error/ loading states
-const loadingAtom = atom<boolean>(false);
-const errorAtom = atom<string>("");
+// Optional: store error state for the whole page
+const pageErrorAtom = atom<string>("");
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
 
-  const [isAdmin, setIsAdmin] = useAtom(isAdminAtom);
-  const [loading, setLoading] = useAtom(loadingAtom);
-  const [errorMsg, setErrorMsg] = useAtom(errorAtom);
-
   const [mainTab, setMainTab] = useAtom(mainTabAtom);
   const [siteSubTab, setSiteSubTab] = useAtom(siteSubTabAtom);
+  const [isAdmin, setIsAdmin] = useAtom(isAdminAtom);
+  const [pageError, setPageError] = useAtom(pageErrorAtom);
 
-  // If unauthenticated => redirect
+  // If unauth => redirect
   useEffect(() => {
     if (status === "unauthenticated") {
       router.replace("/auth/login");
     }
   }, [status, router]);
 
-  // On mount (or whenever the token changes), fetch user info to check admin
+  // On mount, fetch /auth/me to see if SUPER_ADMIN
   useEffect(() => {
     if (status !== "authenticated" || !session?.accessToken) return;
 
-    async function fetchUserGroup() {
-      setLoading(true);
-      setErrorMsg("");
+    async function checkIfAdmin() {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/me`, {
-          headers: { Authorization: `Bearer ${session?.accessToken}` },
-        });
-        if (!res.ok) throw new Error("Failed to load user info");
-        const data = await res.json();
-
-        // If group.name === "SUPER_ADMIN", user is admin
-        if (data?.group?.name === "SUPER_ADMIN") {
-          setIsAdmin(true);
-        } else {
-          setIsAdmin(false);
+        setPageError("");
+        const res = await fetch(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/me`,
+          {
+            headers: { Authorization: `Bearer ${session?.accessToken}` },
+          }
+        );
+        if (!res.ok) {
+          throw new Error("Failed to load user info");
         }
+        const data = await res.json();
+        setIsAdmin(data.group?.name === "SUPER_ADMIN");
       } catch (err: any) {
-        setErrorMsg(err.message || "Error fetching user info");
-      } finally {
-        setLoading(false);
+        setPageError(err.message || "Error checking admin status");
       }
     }
+    checkIfAdmin();
+  }, [status, session?.accessToken, setIsAdmin, setPageError]);
 
-    fetchUserGroup();
-    // Important: only [status, session?.accessToken], NOT setLoading, setErrorMsg, setIsAdmin
-  }, [status, session?.accessToken]);
-
-  if (status === "loading" || loading) {
+  if (status === "loading") {
     return (
       <div className="min-h-screen flex items-center justify-center bg-theme-50 dark:bg-theme-950">
-        <div
-          className={cn(
-            "relative p-6 md:p-8 rounded-xl",
-            "bg-theme-100/75 dark:bg-theme-900/75",
-            "backdrop-blur-lg",
-            "ring-1 ring-theme-200/50 dark:ring-theme-700/50",
-            "shadow-lg shadow-theme-500/10",
-            "max-w-md w-full"
-          )}
-        >
-          <p className="text-theme-800 dark:text-theme-200 text-center text-lg">
-            {status === "loading" ? "Checking session..." : "Loading..."}
-          </p>
-        </div>
+        <p className="text-lg text-theme-700 dark:text-theme-300">
+          Checking session...
+        </p>
       </div>
     );
   }
@@ -92,27 +72,16 @@ export default function DashboardPage() {
   if (status === "unauthenticated") {
     return (
       <div className="min-h-screen flex items-center justify-center bg-theme-50 dark:bg-theme-950">
-        <div
-          className={cn(
-            "relative p-6 md:p-8 rounded-xl",
-            "bg-theme-100/75 dark:bg-theme-900/75",
-            "backdrop-blur-lg",
-            "ring-1 ring-theme-200/50 dark:ring-theme-700/50",
-            "shadow-lg shadow-theme-500/10",
-            "max-w-md w-full"
-          )}
-        >
-          <p className="text-theme-800 dark:text-theme-200 text-center text-lg">
-            Redirecting to login...
-          </p>
-        </div>
+        <p className="text-lg text-theme-700 dark:text-theme-300">
+          Redirecting to login...
+        </p>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-theme-50 dark:bg-theme-950">
-      {/* Top gradient header */}
+      {/* Example header styling, gradient, etc. */}
       <div
         className={cn(
           "relative pt-24 pb-6 md:pt-28 md:pb-8",
@@ -139,7 +108,7 @@ export default function DashboardPage() {
             >
               Dashboard
             </h1>
-            {errorMsg && (
+            {pageError && (
               <div
                 className={cn(
                   "bg-red-100/80 dark:bg-red-900/30",
@@ -149,14 +118,14 @@ export default function DashboardPage() {
                   "backdrop-blur-sm"
                 )}
               >
-                {errorMsg}
+                {pageError}
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* Main content layout */}
+      {/* Tabs Layout */}
       <section className="relative bg-theme-50 dark:bg-theme-950">
         <div
           className={cn(
@@ -165,9 +134,14 @@ export default function DashboardPage() {
             "opacity-20"
           )}
         />
-        <div className={cn("relative py-6", "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8")}>
+        <div
+          className={cn(
+            "relative py-6",
+            "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"
+          )}
+        >
           <div className="md:grid md:grid-cols-12 md:gap-6">
-            {/* Left: tab list */}
+            {/* LEFT COLUMN: Nav */}
             <div className="md:col-span-4 space-y-6 mb-6 md:mb-0">
               <div
                 className={cn(
@@ -177,7 +151,7 @@ export default function DashboardPage() {
                   "shadow-md shadow-theme-500/5 p-5"
                 )}
               >
-                {/* Mobile dropdown */}
+                {/* -- Mobile dropdown (optional) -- */}
                 <div className="md:hidden mb-4">
                   <label className="block text-sm font-medium text-theme-700 dark:text-theme-300">
                     Main Tab
@@ -188,7 +162,9 @@ export default function DashboardPage() {
                       "rounded bg-theme-50 dark:bg-theme-800 text-theme-700 dark:text-theme-200"
                     )}
                     value={mainTab}
-                    onChange={(e) => setMainTab(e.target.value as any)}
+                    onChange={(e) =>
+                      setMainTab(e.target.value as "my-images" | "site-settings")
+                    }
                   >
                     <option value="my-images">My Images</option>
                     {isAdmin && <option value="site-settings">Site Settings</option>}
@@ -205,7 +181,11 @@ export default function DashboardPage() {
                           "rounded bg-theme-50 dark:bg-theme-800 text-theme-700 dark:text-theme-200"
                         )}
                         value={siteSubTab}
-                        onChange={(e) => setSiteSubTab(e.target.value as any)}
+                        onChange={(e) =>
+                          setSiteSubTab(
+                            e.target.value as "groups" | "users" | "configs"
+                          )
+                        }
                       >
                         <option value="groups">Groups</option>
                         <option value="users">Users</option>
@@ -215,7 +195,7 @@ export default function DashboardPage() {
                   )}
                 </div>
 
-                {/* Desktop tabs */}
+                {/* Desktop nav buttons */}
                 <div className="hidden md:block">
                   <button
                     onClick={() => setMainTab("my-images")}
@@ -283,7 +263,7 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Right: Tab content */}
+            {/* RIGHT COLUMN: content */}
             <div className="md:col-span-8">
               <div
                 className={cn(
@@ -305,134 +285,6 @@ export default function DashboardPage() {
           </div>
         </div>
       </section>
-    </div>
-  );
-}
-
-const imagesAtom = atom([
-  { id: 1, name: "cat.jpg", url: "https://example.com/cat.jpg" },
-  { id: 2, name: "dog.png", url: "https://example.com/dog.png" },
-]);
-
-function MyImagesTab() {
-  const [images] = useAtom(imagesAtom);
-
-  async function copyUrl(url: string) {
-    try {
-      await navigator.clipboard.writeText(url);
-      alert("Copied image URL to clipboard!");
-    } catch {
-      alert("Failed to copy.");
-    }
-  }
-
-  return (
-    <div>
-      <h2
-        className={cn(
-          "text-xl font-semibold mb-4",
-          "text-theme-900 dark:text-theme-100",
-          "border-b border-theme-200 dark:border-theme-800 pb-2"
-        )}
-      >
-        My Images
-      </h2>
-      <p className="text-theme-600 dark:text-theme-400 mb-6">
-        (Placeholder) Below is a mock list of images. Click to copy URL.
-      </p>
-
-      <div className="space-y-4">
-        {images.map((img) => (
-          <div
-            key={img.id}
-            onClick={() => copyUrl(img.url)}
-            className={cn(
-              "border border-theme-200/50 dark:border-theme-800/50 rounded-lg",
-              "p-4 bg-theme-100/25 dark:bg-theme-900/25",
-              "transition-all duration-200 hover:shadow-md cursor-pointer"
-            )}
-          >
-            <p className="font-medium text-theme-700 dark:text-theme-300 mb-1">
-              {img.name}
-            </p>
-            <p className="text-sm text-theme-500 dark:text-theme-400 break-all">{img.url}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function SiteSettingsTab({ currentSubTab }: { currentSubTab: string }) {
-  return (
-    <div>
-      <h2
-        className={cn(
-          "text-xl font-semibold mb-4",
-          "text-theme-900 dark:text-theme-100",
-          "border-b border-theme-200 dark:border-theme-800 pb-2"
-        )}
-      >
-        Site Settings
-      </h2>
-
-      {currentSubTab === "groups" && <GroupsTab />}
-      {currentSubTab === "users" && <UsersTab />}
-      {currentSubTab === "configs" && <ConfigsTab />}
-    </div>
-  );
-}
-
-function GroupsTab() {
-  return (
-    <div
-      className={cn(
-        "p-4 bg-theme-100/25 dark:bg-theme-900/25",
-        "rounded-lg border border-theme-200/50 dark:border-theme-800/50"
-      )}
-    >
-      <h3 className="text-lg font-medium text-theme-700 dark:text-theme-300 mb-2">
-        Groups Management (Placeholder)
-      </h3>
-      <p className="text-sm text-theme-500 dark:text-theme-400">
-        Here you might list all groups, create/edit them, etc.
-      </p>
-    </div>
-  );
-}
-
-function UsersTab() {
-  return (
-    <div
-      className={cn(
-        "p-4 bg-theme-100/25 dark:bg-theme-900/25",
-        "rounded-lg border border-theme-200/50 dark:border-theme-800/50"
-      )}
-    >
-      <h3 className="text-lg font-medium text-theme-700 dark:text-theme-300 mb-2">
-        Users Management (Placeholder)
-      </h3>
-      <p className="text-sm text-theme-500 dark:text-theme-400">
-        Here you could show a table of all users, etc.
-      </p>
-    </div>
-  );
-}
-
-function ConfigsTab() {
-  return (
-    <div
-      className={cn(
-        "p-4 bg-theme-100/25 dark:bg-theme-900/25",
-        "rounded-lg border border-theme-200/50 dark:border-theme-800/50"
-      )}
-    >
-      <h3 className="text-lg font-medium text-theme-700 dark:text-theme-300 mb-2">
-        Site Configurations (Placeholder)
-      </h3>
-      <p className="text-sm text-theme-500 dark:text-theme-400">
-        Here you could adjust site-wide settings, etc.
-      </p>
     </div>
   );
 }

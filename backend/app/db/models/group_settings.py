@@ -14,6 +14,8 @@ class GroupSettings(Base):
     # Example toggles & limits
     allowed_extensions = Column(SQLiteJSON, default=["jpg", "png", "gif"])
     max_file_size = Column(Integer, default=10_000_000)  # in bytes, e.g. 10 MB
-    # Future expansions: storage preference, concurrency limits, etc.
+
+    # NEW: total storage limit for the entire user or group; None => unlimited
+    max_storage_size = Column(Integer, nullable=True, default=None)
 
     group = relationship("Group", back_populates="settings")
