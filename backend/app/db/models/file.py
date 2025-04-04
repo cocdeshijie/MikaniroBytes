@@ -5,9 +5,11 @@ from sqlalchemy import (
     String,
     DateTime,
     Enum,
-    func
+    func,
+    ForeignKey
 )
 from sqlalchemy.dialects.sqlite import JSON as SQLiteJSON
+from sqlalchemy.orm import relationship
 
 from app.db.base_class import Base
 from app.db.models.storage_enums import FileType, StorageType
@@ -31,6 +33,13 @@ class File(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
+    # Linking an uploaded file to a user (nullable => guest upload possible)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    uploader = relationship("User", backref="files", foreign_keys=[user_id])
+
+    # Store the original filename so we can return it on download
+    original_filename = Column(String, nullable=True)
+
     # Example usage:
-    # - If storage_type = StorageType.LOCAL, storage_data might be { "path": "/some/path" }
-    # - If storage_type = StorageType.AWS_S3, storage_data might be { "bucket": "...", "key": "..." }
+    # - If storage_type = StorageType.LOCAL, storage_data might be { "path": "some-random-16-chars.ext" }
+    # - If storage_type = StorageType.AWS_S3, storage_data might be { ... }

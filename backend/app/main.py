@@ -1,13 +1,17 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
+from contextlib import asynccontextmanager
 
 from app.db.database import engine, SessionLocal
 from app.db.base_class import Base
 from app.db.models import *
 from app.utils.init_super_admin import ensure_super_admin
-from contextlib import asynccontextmanager
+
+# Routers
 from app.routers import auth
+from app.routers import files
 
 
 @asynccontextmanager
@@ -39,7 +43,13 @@ def create_app() -> FastAPI:
         """
         return {"message": "pong"}
 
+    # Mount the folder "uploads" so files can be served directly
+    # e.g. http://localhost:8000/uploads/<hashedfilename.ext>
+    app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
+    # Register routers
     app.include_router(auth.router, prefix="/auth", tags=["auth"])
+    app.include_router(files.router, prefix="/files", tags=["files"])
 
     return app
 
