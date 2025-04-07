@@ -1,13 +1,17 @@
 "use client";
 
+import { atom, useAtom } from "jotai";
 import { useSession } from "next-auth/react";
-import { cn } from "@/utils/cn";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import * as Tooltip from "@radix-ui/react-tooltip";
-import ConfirmDeleteGroupDialog from "./ConfirmDeleteGroupDialog";
-import AddGroupDialog from "./AddGroupDialog";
-import { ByteValueTooltip } from "./ByteValueTooltip";
+import { cn } from "@/utils/cn";
 
+import { ByteValueTooltip } from "./ByteValueTooltip";
+import AddGroupDialog from "./AddGroupDialog";
+import EditGroupDialog from "./EditGroupDialog";
+import ConfirmDeleteGroupDialog from "./ConfirmDeleteGroupDialog";
+
+/** The Group shape, used across all group components */
 interface GroupItem {
   id: number;
   name: string;
@@ -16,14 +20,20 @@ interface GroupItem {
   max_storage_size: number | null;
 }
 
+// ---------- Jotai Atoms ----------
+// We'll keep these outside the component so they aren't recreated each render.
+const groupsAtom = atom<GroupItem[]>([]);
+const hasFetchedAtom = atom(false);
+const loadingAtom = atom(false);
+const errorMsgAtom = atom("");
+
 export default function GroupsTab() {
   const { data: session } = useSession();
 
-  // local states for simpler logic
-  const [groups, setGroups] = useState<GroupItem[]>([]);
-  const [hasFetched, setHasFetched] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
+  const [groups, setGroups] = useAtom(groupsAtom);
+  const [hasFetched, setHasFetched] = useAtom(hasFetchedAtom);
+  const [loading, setLoading] = useAtom(loadingAtom);
+  const [errorMsg, setErrorMsg] = useAtom(errorMsgAtom);
 
   // Fetch the groups once
   useEffect(() => {
@@ -32,7 +42,7 @@ export default function GroupsTab() {
       fetchGroups();
       setHasFetched(true);
     }
-  }, [session?.accessToken, hasFetched]);
+  }, [session?.accessToken, hasFetched, setHasFetched]);
 
   async function fetchGroups() {
     setLoading(true);
@@ -57,12 +67,15 @@ export default function GroupsTab() {
     }
   }
 
+  // After a successful CREATE or DELETE or UPDATE, we update local state:
+  function onGroupCreated(newGroup: GroupItem) {
+    setGroups((prev) => [...prev, newGroup]);
+  }
   function onDeleteConfirmed(groupId: number, _deleteFiles: boolean) {
     setGroups((prev) => prev.filter((g) => g.id !== groupId));
   }
-
-  function onGroupCreated(newGroup: GroupItem) {
-    setGroups((prev) => [...prev, newGroup]);
+  function onGroupUpdated(updated: GroupItem) {
+    setGroups((prev) => prev.map((g) => (g.id === updated.id ? updated : g)));
   }
 
   return (
@@ -76,7 +89,8 @@ export default function GroupsTab() {
         Groups Management
       </h3>
       <p className="text-sm text-theme-500 dark:text-theme-400 mb-4">
-        Create or remove groups. Deleting a group also removes its users and optionally their files.
+        Create, edit, or remove groups. Deleting a group also removes its users
+        and optionally their files.
       </p>
 
       {errorMsg && (
@@ -100,7 +114,6 @@ export default function GroupsTab() {
         />
       </div>
 
-      {/* CHANGED HERE: Wrap the group list in <Tooltip.Provider> so all tooltips work properly */}
       <Tooltip.Provider delayDuration={100} skipDelayDuration={0}>
         <div
           className={cn(
@@ -128,29 +141,33 @@ export default function GroupsTab() {
                     <p className="font-medium text-theme-800 dark:text-theme-200">
                       {g.name}
                     </p>
-                    {g.name === "SUPER_ADMIN" ? (
-                      <button
-                        disabled
-                        className="px-3 py-1.5 rounded text-white bg-gray-400 cursor-not-allowed"
-                      >
-                        Delete
-                      </button>
-                    ) : (
-                      <ConfirmDeleteGroupDialog
+                    <div className="flex items-center gap-2">
+                      <EditGroupDialog
                         group={g}
                         sessionToken={session?.accessToken || ""}
-                        onDeleted={onDeleteConfirmed}
+                        onUpdated={onGroupUpdated}
                       />
-                    )}
+                      {g.name === "SUPER_ADMIN" ? (
+                        <button
+                          disabled
+                          className="px-3 py-1.5 rounded text-white bg-gray-400 cursor-not-allowed"
+                        >
+                          Delete
+                        </button>
+                      ) : (
+                        <ConfirmDeleteGroupDialog
+                          group={g}
+                          sessionToken={session?.accessToken || ""}
+                          onDeleted={onDeleteConfirmed}
+                        />
+                      )}
+                    </div>
                   </div>
 
-                  {/* CHANGED HERE: max_file_size in a ByteValueTooltip */}
                   <p className="text-sm text-theme-600 dark:text-theme-400 mb-1">
                     Max file size:{" "}
                     <ByteValueTooltip bytes={g.max_file_size} />
                   </p>
-
-                  {/* CHANGED HERE: max_storage_size => null => "Unlimited" else ByteValueTooltip */}
                   <p className="text-sm text-theme-600 dark:text-theme-400">
                     Max total storage:{" "}
                     {g.max_storage_size == null ? (
