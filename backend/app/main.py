@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from app.db.database import engine, SessionLocal
 from app.db.base_class import Base
 from app.db.models import *
-from app.utils.init_super_admin import ensure_super_admin
+from app.utils.init_db import init_db
 
 # Routers
 from app.routers import auth
@@ -20,7 +20,7 @@ async def lifespan(app: FastAPI):
     # Run on startup
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
-        ensure_super_admin(db)
+        init_db(db)
 
     yield
     # shutdown logic if needed

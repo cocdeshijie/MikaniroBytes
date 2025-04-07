@@ -8,6 +8,7 @@ from app.db.database import get_db
 from app.db.models.user import User
 from app.db.models.group import Group
 from app.db.models.user_session import UserSession
+from app.db.models.system_settings import SystemSettings
 from app.utils.security import verify_password, hash_password
 from app.dependencies.auth import get_current_user
 
@@ -199,36 +200,46 @@ def check_session(payload: TokenCheckRequest, db: Session = Depends(get_db)):
 def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     """
     Register a new user account.
-    For example, default them to the 'FREE_USER' group if it exists.
+    - If SystemSettings.registration_enabled == False, block it
+    - If default_user_group_id is set, use that group for new user
+    - Otherwise fallback to "FREE_USER" or "USERS" or some other logic
     """
 
-    # 1) Check if username already exists
+    # 1) Check system settings
+    system_settings = db.query(SystemSettings).first()
+    if system_settings and not system_settings.registration_enabled:
+        raise HTTPException(status_code=403, detail="Registration is disabled.")
+
+    # 2) Check if username already exists
     existing_user = db.query(User).filter(User.username == payload.username).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Username already taken.")
 
-    # 2) Optional: check if email is used
+    # 3) Optional: check if email is used
     if payload.email:
         email_in_use = db.query(User).filter(User.email == payload.email).first()
         if email_in_use:
             raise HTTPException(status_code=400, detail="Email already in use.")
 
-    # 3) Find or create a "FREE_USER" group (adjust as needed)
-    free_group = db.query(Group).filter(Group.name == "FREE_USER").first()
-    if not free_group:
-        # If it doesn't exist, create it (or handle differently)
-        free_group = Group(name="FREE_USER")
-        db.add(free_group)
-        db.commit()
-        db.refresh(free_group)
-        # You may also create group_settings for them, if necessary
+    # 4) Figure out which group to put them in
+    group_id = None
+    if system_settings and system_settings.default_user_group_id:
+        # Check if that group still exists
+        default_group = db.query(Group).filter(Group.id == system_settings.default_user_group_id).first()
+        if default_group:
+            group_id = default_group.id
+    else:
+        # fallback logic: do we want "FREE_USER"? or "USERS"? Let's do "USERS".
+        fallback_group = db.query(Group).filter(Group.name == "USERS").first()
+        if fallback_group:
+            group_id = fallback_group.id
 
-    # 4) Create the user
+    # 5) Create the user
     new_user = User(
         username=payload.username,
         email=payload.email,
         hashed_password=hash_password(payload.password),
-        group_id=free_group.id  # or None if you don’t care
+        group_id=group_id,
     )
 
     db.add(new_user)

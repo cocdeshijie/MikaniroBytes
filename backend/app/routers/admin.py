@@ -9,6 +9,7 @@ from app.db.database import get_db
 from app.db.models.user import User
 from app.db.models.group import Group
 from app.db.models.group_settings import GroupSettings
+from app.db.models.system_settings import SystemSettings
 from app.db.models.file import File
 
 router = APIRouter()
@@ -24,7 +25,7 @@ class GroupCreate(BaseModel):
     name: str
     allowed_extensions: list[str] = ["jpg", "png", "gif"]
     max_file_size: int = 10_000_000
-    max_storage_size: Optional[int] = None  # None => unlimited
+    max_storage_size: Optional[int] = None
 
 
 class GroupRead(BaseModel):
@@ -39,7 +40,6 @@ class GroupRead(BaseModel):
 
 
 class GroupUpdate(BaseModel):
-    # In future, you might make fields optional to allow partial update
     name: Optional[str] = None
     allowed_extensions: Optional[List[str]] = None
     max_file_size: Optional[int] = None
@@ -51,10 +51,6 @@ def list_groups(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    List all groups with their settings.
-    Must be SUPER_ADMIN.
-    """
     ensure_superadmin(current_user)
 
     groups = db.query(Group).all()
@@ -69,7 +65,6 @@ def list_groups(
                 max_storage_size=g.settings.max_storage_size
             ))
         else:
-            # If group has no settings row, default them
             result.append(GroupRead(
                 id=g.id,
                 name=g.name,
@@ -86,13 +81,8 @@ def create_group(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Create a new group with the specified name and settings.
-    Must be SUPER_ADMIN.
-    """
     ensure_superadmin(current_user)
 
-    # Check if group name is already in use
     existing = db.query(Group).filter(Group.name == payload.name).first()
     if existing:
         raise HTTPException(status_code=400, detail="Group name already exists.")
@@ -125,10 +115,6 @@ def update_group(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Update a group's name or settings.
-    Must be SUPER_ADMIN.
-    """
     ensure_superadmin(current_user)
 
     db_group = db.query(Group).filter(Group.id == group_id).first()
@@ -136,22 +122,17 @@ def update_group(
         raise HTTPException(status_code=404, detail="Group not found.")
 
     if db_group.name == "SUPER_ADMIN":
-        # In theory you might allow updates to SUPER_ADMIN settings, but be cautious
-        # For safety, let's forbid changing name:
         if payload.name and payload.name != "SUPER_ADMIN":
             raise HTTPException(status_code=400, detail="Cannot rename SUPER_ADMIN group.")
-        # but let's allow updating settings if you want:
-        pass
 
-    # Update group name if provided
+    # update group name
     if payload.name and db_group.name != "SUPER_ADMIN":
-        # check uniqueness
         existing = db.query(Group).filter(Group.name == payload.name).first()
         if existing and existing.id != group_id:
             raise HTTPException(status_code=400, detail="Another group with that name exists.")
         db_group.name = payload.name
 
-    # Update settings
+    # update settings
     settings = db_group.settings
     if not settings:
         settings = GroupSettings(group_id=db_group.id)
@@ -181,18 +162,10 @@ def update_group(
 @router.delete("/groups/{group_id}")
 def delete_group(
     group_id: int,
-    delete_files: bool = Query(False, description="Whether to also delete users' files"),
+    delete_files: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Delete an entire group.
-    - All users in that group will be deleted.
-    - If delete_files=True, also remove all their files from DB (and optionally from disk if local).
-    Must be SUPER_ADMIN.
-
-    SUPER_ADMIN group cannot be deleted.
-    """
     ensure_superadmin(current_user)
 
     db_group = db.query(Group).filter(Group.id == group_id).first()
@@ -202,23 +175,88 @@ def delete_group(
     if db_group.name == "SUPER_ADMIN":
         raise HTTPException(status_code=400, detail="Cannot delete the SUPER_ADMIN group.")
 
-    # Collect user IDs for that group
+    # find user ids
     users_in_group = db.query(User).filter(User.group_id == group_id).all()
     user_ids = [u.id for u in users_in_group]
 
     if delete_files and user_ids:
-        # Delete all files belonging to these users
-        # If you also want to remove them from disk, you'd open the path from storage_data & remove.
         db.query(File).filter(File.user_id.in_(user_ids)).delete(synchronize_session=False)
 
-    # Deleting the group cascades the group_settings via "ondelete=CASCADE"
-    # But you also want to delete the users.
-    # "ondelete=SET NULL" was used for user->group in your model, so it won't remove the users automatically.
-    # So we'll explicitly remove them:
     db.query(User).filter(User.group_id == group_id).delete(synchronize_session=False)
 
-    # Finally remove the group row
     db.delete(db_group)
     db.commit()
 
     return {"detail": f"Group '{db_group.name}' deleted. Users removed. Files_deleted={delete_files}"}
+
+
+class SystemSettingsRead(BaseModel):
+    registration_enabled: bool
+    public_upload_enabled: bool
+    default_user_group_id: Optional[int]
+
+
+class SystemSettingsUpdate(BaseModel):
+    registration_enabled: Optional[bool] = None
+    public_upload_enabled: Optional[bool] = None
+    default_user_group_id: Optional[int] = None
+
+
+@router.get("/system-settings", response_model=SystemSettingsRead)
+def get_system_settings(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    ensure_superadmin(current_user)
+
+    settings = db.query(SystemSettings).first()
+    if not settings:
+        # If none, create one or return defaults
+        return SystemSettingsRead(
+            registration_enabled=True,
+            public_upload_enabled=False,
+            default_user_group_id=None
+        )
+    return SystemSettingsRead(
+        registration_enabled=settings.registration_enabled,
+        public_upload_enabled=settings.public_upload_enabled,
+        default_user_group_id=settings.default_user_group_id,
+    )
+
+
+@router.put("/system-settings", response_model=SystemSettingsRead)
+def update_system_settings(
+    payload: SystemSettingsUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    ensure_superadmin(current_user)
+
+    settings = db.query(SystemSettings).first()
+    if not settings:
+        # create if missing
+        settings = SystemSettings()
+        db.add(settings)
+
+    if payload.registration_enabled is not None:
+        settings.registration_enabled = payload.registration_enabled
+
+    if payload.public_upload_enabled is not None:
+        settings.public_upload_enabled = payload.public_upload_enabled
+
+    if payload.default_user_group_id is not None:
+        # optionally validate the group exists
+        group = db.query(Group).filter(Group.id == payload.default_user_group_id).first()
+        if not group:
+            raise HTTPException(status_code=400, detail="Group with that ID not found.")
+        settings.default_user_group_id = group.id
+
+    db.add(settings)
+    db.commit()
+    db.refresh(settings)
+
+    return SystemSettingsRead(
+        registration_enabled=settings.registration_enabled,
+        public_upload_enabled=settings.public_upload_enabled,
+        default_user_group_id=settings.default_user_group_id
+    )
