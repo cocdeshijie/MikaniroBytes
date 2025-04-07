@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { atom, useAtom } from "jotai";
+import { useMemo } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { cn } from "@/utils/cn";
 
-/** Same as in GroupsTab; define again or import from a shared file. */
+/** Same shape as in GroupsTab. */
 interface GroupItem {
   id: number;
   name: string;
@@ -14,31 +15,28 @@ interface GroupItem {
 }
 
 /**
- * Convert a string like "10gb", "5 tb", "0.5 gb", "1000000" into bytes (number).
- * Returns null if blank or invalid.
- * You can tweak for KiB vs KB, etc.
+ * Helper: convert a string like "10mb", "5tb", "123456" into a number of bytes.
+ * Returns null if blank or invalid => unlimited.
  */
 function parseSizeToBytes(input: string): number | null {
   const trimmed = input.trim().toLowerCase();
-  if (!trimmed) return null; // blank => unlimited or null
-  // e.g. "10gb", "5 tb", "0.5 gb"
-  // 1 KB = 1,000 bytes, 1 MB = 1,000,000, etc.
-  // For simplicity. If you want 1024-based, adjust accordingly.
+  if (!trimmed) return null; // blank => unlimited
+
   const regex = /^([\d.,]+)\s*(b|kb|mb|gb|tb)?$/;
   const match = trimmed.match(regex);
   if (!match) {
-    // try pure number => treat as bytes
+    // try pure number => treat as raw bytes
     const asNumber = parseFloat(trimmed);
     if (isNaN(asNumber)) return null;
     return Math.round(asNumber);
   }
   let numericPart = parseFloat(match[1].replace(",", "."));
   if (isNaN(numericPart)) return null;
-  let unit = match[2] || "b"; // if no unit => bytes
+  const unit = match[2] || "b";
 
   switch (unit) {
     case "b":
-      // just bytes
+      // no-op
       break;
     case "kb":
       numericPart *= 1_000;
@@ -53,10 +51,8 @@ function parseSizeToBytes(input: string): number | null {
       numericPart *= 1_000_000_000_000;
       break;
     default:
-      // unexpected
       return null;
   }
-
   return Math.round(numericPart);
 }
 
@@ -67,15 +63,23 @@ export default function AddGroupDialog({
   sessionToken: string;
   onCreated: (newGroup: GroupItem) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  // ---------- Define stable local atoms with useMemo ----------
+  const dialogOpenAtom = useMemo(() => atom(false), []);
+  const nameAtom = useMemo(() => atom(""), []);
+  const allowedAtom = useMemo(() => atom("jpg,png,gif"), []);
+  const maxFileSizeAtom = useMemo(() => atom("10mb"), []);
+  const maxStorageAtom = useMemo(() => atom(""), []);
+  const errorMsgAtom = useMemo(() => atom(""), []);
+  const loadingAtom = useMemo(() => atom(false), []);
 
-  // Form fields
-  const [name, setName] = useState("");
-  const [allowedExt, setAllowedExt] = useState("jpg,png,gif");
-  const [maxFileSize, setMaxFileSize] = useState("10mb"); // example default
-  const [maxStorage, setMaxStorage] = useState(""); // blank => unlimited
-  const [errorMsg, setErrorMsg] = useState("");
-  const [loading, setLoading] = useState(false);
+  // ---------- Use those atoms in local state ----------
+  const [open, setOpen] = useAtom(dialogOpenAtom);
+  const [name, setName] = useAtom(nameAtom);
+  const [allowedExt, setAllowedExt] = useAtom(allowedAtom);
+  const [maxFileSize, setMaxFileSize] = useAtom(maxFileSizeAtom);
+  const [maxStorage, setMaxStorage] = useAtom(maxStorageAtom);
+  const [errorMsg, setErrorMsg] = useAtom(errorMsgAtom);
+  const [loading, setLoading] = useAtom(loadingAtom);
 
   async function handleCreate() {
     setErrorMsg("");
@@ -86,23 +90,19 @@ export default function AddGroupDialog({
         throw new Error("Group name is required");
       }
 
-      // parse allowed extensions
       const exts = allowedExt
         .split(",")
         .map((x) => x.trim())
         .filter(Boolean);
 
-      // parse max file size
       const fileBytes = parseSizeToBytes(maxFileSize);
       if (fileBytes === null) {
         throw new Error(`Invalid max file size: "${maxFileSize}"`);
       }
 
-      // parse max total storage
-      const storeBytes = parseSizeToBytes(maxStorage);
-      // storeBytes can be null => unlimited
+      const storeBytes = parseSizeToBytes(maxStorage); // can be null => unlimited
 
-      // call backend
+      // Call backend
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/groups`,
         {
@@ -112,7 +112,7 @@ export default function AddGroupDialog({
             Authorization: `Bearer ${sessionToken}`,
           },
           body: JSON.stringify({
-            name,
+            name: name.trim(),
             allowed_extensions: exts,
             max_file_size: fileBytes,
             max_storage_size: storeBytes,
@@ -123,16 +123,15 @@ export default function AddGroupDialog({
         const data = await res.json().catch(() => ({}));
         throw new Error(data.detail || "Failed to create group");
       }
-
       const newGroup: GroupItem = await res.json();
       onCreated(newGroup);
 
-      // clear
+      // Clear & close
       setName("");
       setAllowedExt("jpg,png,gif");
       setMaxFileSize("10mb");
       setMaxStorage("");
-      setOpen(false); // close dialog
+      setOpen(false);
     } catch (err: any) {
       setErrorMsg(err.message || "Error creating group");
     } finally {
@@ -142,7 +141,6 @@ export default function AddGroupDialog({
 
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
-      {/* Trigger Button */}
       <Dialog.Trigger asChild>
         <button
           className={cn(
@@ -173,7 +171,7 @@ export default function AddGroupDialog({
           </Dialog.Title>
           <Dialog.Description className="text-sm text-theme-600 dark:text-theme-400 mb-4">
             Enter information for the new group.
-            You can specify file/space limits using units like “10mb”, “5tb”.
+            Use units like “10mb”, “5tb”, or raw byte counts.
           </Dialog.Description>
 
           {errorMsg && (
@@ -188,7 +186,6 @@ export default function AddGroupDialog({
 
           {/* FORM FIELDS */}
           <div className="space-y-4">
-            {/* Group Name */}
             <div>
               <label className="block text-sm font-medium text-theme-700 dark:text-theme-300 mb-1">
                 Group Name
@@ -204,8 +201,6 @@ export default function AddGroupDialog({
                 placeholder="e.g. MyGroup"
               />
             </div>
-
-            {/* Allowed Extensions */}
             <div>
               <label className="block text-sm font-medium text-theme-700 dark:text-theme-300 mb-1">
                 Allowed Extensions
@@ -221,8 +216,6 @@ export default function AddGroupDialog({
                 placeholder="comma-separated, e.g. jpg,png,gif"
               />
             </div>
-
-            {/* Max File Size */}
             <div>
               <label className="block text-sm font-medium text-theme-700 dark:text-theme-300 mb-1">
                 Max File Size
@@ -235,14 +228,12 @@ export default function AddGroupDialog({
                 )}
                 value={maxFileSize}
                 onChange={(e) => setMaxFileSize(e.target.value)}
-                placeholder="e.g. 10MB (blank => unlimited?)"
+                placeholder="e.g. 10MB (blank => unlimited)"
               />
               <p className="text-xs text-theme-400 mt-1">
-                Acceptable units: KB, MB, GB, TB. Or just enter raw bytes.
+                Acceptable units: KB, MB, GB, TB (or raw bytes).
               </p>
             </div>
-
-            {/* Max Total Storage */}
             <div>
               <label className="block text-sm font-medium text-theme-700 dark:text-theme-300 mb-1">
                 Max Total Storage
