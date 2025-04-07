@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useSession } from "next-auth/react";
+import { atom, useAtom } from "jotai";
 import { cn } from "@/utils/cn";
 
 interface GroupItem {
@@ -15,26 +16,34 @@ interface SystemSettingsData {
   default_user_group_id: number | null;
 }
 
+/** Jotai atoms for local state */
+const loadingAtom = atom(false);
+const errorMsgAtom = atom("");
+const successMsgAtom = atom("");
+const hasFetchedAtom = atom(false);
+
+/** The system config data */
+const configAtom = atom<SystemSettingsData>({
+  registration_enabled: true,
+  public_upload_enabled: false,
+  default_user_group_id: null,
+});
+
+/** The list of valid groups to choose from (excluding SUPER_ADMIN). */
+const groupsAtom = atom<GroupItem[]>([]);
+
 export default function ConfigsTab() {
   const { data: session } = useSession();
 
-  // Local states
-  const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
-  const [successMsg, setSuccessMsg] = useState("");
+  const [loading, setLoading] = useAtom(loadingAtom);
+  const [errorMsg, setErrorMsg] = useAtom(errorMsgAtom);
+  const [successMsg, setSuccessMsg] = useAtom(successMsgAtom);
+  const [hasFetched, setHasFetched] = useAtom(hasFetchedAtom);
 
-  // The config we're editing
-  const [config, setConfig] = useState<SystemSettingsData>({
-    registration_enabled: true,
-    public_upload_enabled: false,
-    default_user_group_id: null,
-  });
+  const [config, setConfig] = useAtom(configAtom);
+  const [groups, setGroups] = useAtom(groupsAtom);
 
-  // List of groups to pick from
-  const [groups, setGroups] = useState<GroupItem[]>([]);
-  const [hasFetched, setHasFetched] = useState(false);
-
-  // On mount, fetch config & group list
+  // On mount (once), fetch system settings + group list.
   useEffect(() => {
     if (!session?.accessToken) return;
     if (!hasFetched) {
@@ -48,12 +57,15 @@ export default function ConfigsTab() {
     setErrorMsg("");
     setSuccessMsg("");
     try {
-      // 1) fetch system-settings
-      let res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/system-settings`, {
-        headers: {
-          Authorization: `Bearer ${session?.accessToken}`,
-        },
-      });
+      // 1) Fetch system-settings
+      let res = await fetch(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/system-settings`,
+        {
+          headers: {
+            Authorization: `Bearer ${session?.accessToken}`,
+          },
+        }
+      );
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.detail || "Failed to fetch system settings");
@@ -61,7 +73,7 @@ export default function ConfigsTab() {
       const settingsData: SystemSettingsData = await res.json();
       setConfig(settingsData);
 
-      // 2) fetch groups (so we can choose default group)
+      // 2) Fetch groups
       res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/groups`, {
         headers: {
           Authorization: `Bearer ${session?.accessToken}`,
@@ -71,10 +83,32 @@ export default function ConfigsTab() {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.detail || "Failed to fetch groups");
       }
-      const groupData: any[] = await res.json(); // shape = { id, name, ...}
-      // For the dropdown, we only need {id, name}
-      const minimal = groupData.map((g) => ({ id: g.id, name: g.name }));
+      const groupData: any[] = await res.json();
+
+      // Filter out SUPER_ADMIN from the list:
+      const minimal = groupData
+        .filter((g) => g.name !== "SUPER_ADMIN") // remove super admin
+        .map((g) => ({
+          id: g.id,
+          name: g.name,
+        }));
+
       setGroups(minimal);
+
+      // If the server's default_user_group_id is pointing to SUPER_ADMIN or null
+      // and we have at least one normal group, we might want to force an update
+      // so the UI doesn't get stuck with an invalid group. Up to you:
+      if (
+        settingsData.default_user_group_id &&
+        minimal.length > 0 &&
+        !minimal.some((m) => m.id === settingsData.default_user_group_id)
+      ) {
+        // the existing default is not in the new list => pick the first group or none
+        setConfig((prev) => ({
+          ...prev,
+          default_user_group_id: minimal[0].id, // force to first
+        }));
+      }
     } catch (err: any) {
       setErrorMsg(err.message || "Error loading data");
     } finally {
@@ -82,24 +116,28 @@ export default function ConfigsTab() {
     }
   }
 
-  // Handle toggles
+  // Toggling registration
   function handleToggleRegistration(e: React.ChangeEvent<HTMLInputElement>) {
     setConfig((prev) => ({
       ...prev,
       registration_enabled: e.target.checked,
     }));
   }
+
+  // Toggling public upload
   function handleTogglePublicUpload(e: React.ChangeEvent<HTMLInputElement>) {
     setConfig((prev) => ({
       ...prev,
       public_upload_enabled: e.target.checked,
     }));
   }
+
+  // Changing default user group
   function handleGroupChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const val = parseInt(e.target.value, 10);
     setConfig((prev) => ({
       ...prev,
-      default_user_group_id: val >= 1 ? val : null,
+      default_user_group_id: val,
     }));
   }
 
@@ -109,14 +147,17 @@ export default function ConfigsTab() {
     setErrorMsg("");
     setSuccessMsg("");
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/system-settings`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.accessToken}`,
-        },
-        body: JSON.stringify(config),
-      });
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/system-settings`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.accessToken}`,
+          },
+          body: JSON.stringify(config),
+        }
+      );
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.detail || "Failed to update settings");
@@ -201,28 +242,33 @@ export default function ConfigsTab() {
           />
         </div>
 
-        {/* Default user group */}
-        <div>
-          <label className="block mb-1 text-sm text-theme-600 dark:text-theme-400">
-            Default User Group
-          </label>
-          <select
-            className={cn(
-              "w-full px-3 py-2 rounded border",
-              "border-theme-200 dark:border-theme-700",
-              "bg-theme-50 dark:bg-theme-800 text-theme-900 dark:text-theme-100"
-            )}
-            value={config.default_user_group_id ?? ""}
-            onChange={handleGroupChange}
-          >
-            <option value="">-- None --</option>
-            {groups.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* Default user group (excluding SUPER_ADMIN). No "None" option. */}
+        {groups.length === 0 ? (
+          <p className="text-red-500 text-sm">
+            No normal groups found! Please create a group besides SUPER_ADMIN.
+          </p>
+        ) : (
+          <div>
+            <label className="block mb-1 text-sm text-theme-600 dark:text-theme-400">
+              Default User Group
+            </label>
+            <select
+              className={cn(
+                "w-full px-3 py-2 rounded border",
+                "border-theme-200 dark:border-theme-700",
+                "bg-theme-50 dark:bg-theme-800 text-theme-900 dark:text-theme-100"
+              )}
+              value={config.default_user_group_id ?? groups[0]?.id}
+              onChange={handleGroupChange}
+            >
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       <button
