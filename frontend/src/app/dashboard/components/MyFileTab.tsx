@@ -5,23 +5,23 @@ import { useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { cn } from "@/utils/cn";
 
-interface FileItem {
-  file_id: number;
-  original_filename: string | null;
-  direct_link: string;
-}
+import {
+  filesAtom,
+  filesNeedsRefreshAtom,
+  FileItem
+} from "@/atoms/fileAtoms";
+
 
 /* ---------- Jotai atoms ---------- */
-const filesAtom = atom<FileItem[]>([]);
-const hasFetchedAtom = atom(false);
-const loadingAtom = atom(false);
+const loadingAtom  = atom(false);
 const errorMsgAtom = atom("");
+
 
 export default function MyFileTab() {
   const { data: session } = useSession();
 
   const [files, setFiles] = useAtom(filesAtom);
-  const [hasFetched, setHasFetched] = useAtom(hasFetchedAtom);
+  const [needsRefresh, setNeedsRefresh] = useAtom(filesNeedsRefreshAtom);
   const [loading, setLoading] = useAtom(loadingAtom);
   const [errorMsg, setErrorMsg] = useAtom(errorMsgAtom);
 
@@ -38,12 +38,10 @@ export default function MyFileTab() {
   /* ---------- Initial fetch ---------- */
   useEffect(() => {
     if (!session?.accessToken) return;
-    if (!hasFetched) {
-      fetchFiles();
-      setHasFetched(true);
-    }
+    if (!needsRefresh) return;
+    fetchFiles();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.accessToken, hasFetched]);
+  }, [session?.accessToken, needsRefresh]);
 
   async function fetchFiles() {
     setLoading(true);
@@ -61,6 +59,7 @@ export default function MyFileTab() {
       }
       const data: FileItem[] = await res.json();
       setFiles(data);
+      setNeedsRefresh(false);
     } catch (err: any) {
       setErrorMsg(err.message || "Error loading files");
     } finally {
