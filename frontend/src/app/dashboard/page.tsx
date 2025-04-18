@@ -7,7 +7,7 @@ export default function DashboardIndexPage() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace("/dashboard/images");
+    router.replace("/dashboard/files");
   }, [router]);
 
   return null; // or a loading indicator
