@@ -7,14 +7,13 @@ from fastapi import (
     Request,
 )
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
+from pydantic import BaseModel
 from typing import Optional, List
+from sqlalchemy.orm import Session
 import os
 import time
 import hashlib
 import secrets
-
-from pydantic import BaseModel
 
 from app.db.database import get_db
 from app.db.models.file import File as FileModel
@@ -23,7 +22,6 @@ from app.db.models.user import User
 from app.dependencies.auth import get_optional_user, get_current_user
 
 router = APIRouter()
-
 
 # --------------------------------------------------------------------------- #
 #                               Pydantic models                               #
@@ -35,6 +33,55 @@ class MyFileItem(BaseModel):
 
     class Config:
         orm_mode = True
+
+
+class BatchDeletePayload(BaseModel):
+    ids: List[int]
+
+
+# --------------------------------------------------------------------------- #
+#                         Batch‑delete (static path)                           #
+# --------------------------------------------------------------------------- #
+@router.delete("/batch-delete")
+def batch_delete_files(
+    payload: BatchDeletePayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Delete multiple files that belong to the current user.
+    Body: { "ids": [1,2,3] }
+    Returns: { "deleted": [1,2,3] }
+    """
+    if not payload.ids:
+        raise HTTPException(status_code=400, detail="Empty ids list")
+
+    # Only delete files owned by the requester
+    rows: List[FileModel] = (
+        db.query(FileModel)
+        .filter(FileModel.id.in_(payload.ids), FileModel.user_id == current_user.id)
+        .all()
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="No matching files found")
+
+    deleted_ids: List[int] = []
+
+    for f in rows:
+        # remove file on disk
+        rel_path: str = f.storage_data.get("path", "")
+        abs_path = os.path.join("uploads", rel_path)
+        if os.path.isfile(abs_path):
+            try:
+                os.remove(abs_path)
+            except OSError:
+                pass
+
+        deleted_ids.append(f.id)
+        db.delete(f)
+
+    db.commit()
+    return {"deleted": deleted_ids}
 
 
 # --------------------------------------------------------------------------- #
@@ -71,7 +118,7 @@ def upload_file(
 
     # ------------ DB row ------------
     db_file = FileModel(
-        size=len(contents),                    # ← NEW
+        size=len(contents),
         file_type=FileType.BASE,
         storage_type=StorageType.LOCAL,
         storage_data={"path": hashed_name},
@@ -103,23 +150,12 @@ def list_my_files(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Return a lightweight list of the authenticated user’s files so the
-    dashboard can render them.
-
-    Shape expected by the front‑end (see `MyFileTab.tsx`):
-      [
-        {
-          "file_id": 123,
-          "original_filename": "photo.jpg",
-          "direct_link": "https://…/uploads/abcd1234.jpg"
-        },
-        …
-      ]
+    Return a lightweight list of the authenticated user’s files.
     """
     rows: List[FileModel] = (
         db.query(FileModel)
         .filter(FileModel.user_id == current_user.id)
-        .order_by(FileModel.id.desc())          # latest first
+        .order_by(FileModel.id.desc())
         .all()
     )
 
@@ -132,8 +168,6 @@ def list_my_files(
         )
         for f in rows
     ]
-
-    print("items", items)
     return items
 
 
@@ -143,15 +177,34 @@ def list_my_files(
 @router.get("/download/{file_id}")
 def download_file(
     file_id: int,
+    token: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     """
     Stream the requested file back to the client.
-    (Currently no auth check – feel free to adjust to your policy.)
+
+    • If a `token` query‑param is provided, we validate it instead of requiring
+      an Authorization header.  This is handy for ZIP / batch downloads.
     """
+    # auth by header OR token param
+    session_user: Optional[User] = None
+    if token:
+        from app.db.models.user_session import UserSession
+        session = db.query(UserSession).filter(UserSession.token == token).first()
+        if session:
+            session_user = db.query(User).filter(User.id == session.user_id).first()
+
+    # fallback to normal auth dependency
+    if not session_user:
+        from app.dependencies.auth import get_current_user  # lazy import
+        session_user = get_current_user(Request(scope={"type": "http"}), db)
+
     db_file = db.query(FileModel).filter(FileModel.id == file_id).first()
     if not db_file:
         raise HTTPException(status_code=404, detail="File not found.")
+
+    if db_file.user_id != session_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden")
 
     rel_path: str = db_file.storage_data.get("path", "")
     abs_path = os.path.join("uploads", rel_path)
@@ -167,5 +220,7 @@ def download_file(
     return StreamingResponse(
         file_iterator(),
         media_type=db_file.content_type or "application/octet-stream",
-        headers={"Content-Disposition": f'attachment; filename="{db_file.original_filename or rel_path}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{db_file.original_filename or rel_path}"'
+        },
     )

@@ -1,75 +1,255 @@
 "use client";
 
-import { atom, useAtom } from "jotai";
-import { useEffect, useCallback } from "react";
-import { useSession } from "next-auth/react";
-import { cn } from "@/utils/cn";
-
 import {
   filesAtom,
   filesNeedsRefreshAtom,
-  FileItem
+  fileActionMsgAtom,
+  FileItem,
+  selectedIdsAtom,
 } from "@/atoms/fileAtoms";
+import { cn } from "@/utils/cn";
+import { iconFor } from "@/utils/fileIcons";
+import { useLasso } from "@/hooks/useLasso";
+import * as ContextMenu from "@radix-ui/react-context-menu";
+import { useSession } from "next-auth/react";
+import {
+  FiCopy,
+  FiDownload,
+  FiExternalLink,
+  FiLoader,
+  FiTrash,
+} from "react-icons/fi";
+import { atom, useAtom } from "jotai";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  MouseEvent as ReactMouseEvent,
+} from "react";
 
-
-/* ---------- Jotai atoms ---------- */
-const loadingAtom  = atom(false);
+/* ------------------------------------------------------------------ */
+/*                    local atoms (component‑only)                    */
+/* ------------------------------------------------------------------ */
+const loadingAtom = atom(false);
 const errorMsgAtom = atom("");
 
-
+/* ------------------------------------------------------------------ */
+/*                            COMPONENT                               */
+/* ------------------------------------------------------------------ */
 export default function MyFileTab() {
   const { data: session } = useSession();
 
   const [files, setFiles] = useAtom(filesAtom);
   const [needsRefresh, setNeedsRefresh] = useAtom(filesNeedsRefreshAtom);
+  const [selectedIds, setSelectedIds] = useAtom(selectedIdsAtom);
+  const [actionMsg, setActionMsg] = useAtom(fileActionMsgAtom);
   const [loading, setLoading] = useAtom(loadingAtom);
   const [errorMsg, setErrorMsg] = useAtom(errorMsgAtom);
+  const [downloadingId, setDownloadingId] = useAtom(
+    useMemo(() => atom<number | null>(null), [])
+  );
 
-  /* ---------- Clipboard helper ---------- */
-  const copyUrl = useCallback(async (url: string) => {
-    try {
-      await navigator.clipboard.writeText(url);
-      alert("Copied file URL to clipboard!");
-    } catch {
-      alert("Failed to copy.");
-    }
-  }, []);
-
-  /* ---------- Initial fetch ---------- */
+  /* ------------------------------ fetch list ----------------------- */
   useEffect(() => {
-    if (!session?.accessToken) return;
-    if (!needsRefresh) return;
-    fetchFiles();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!session?.accessToken || !needsRefresh) return;
+    (async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/files/my-files`,
+          { headers: { Authorization: `Bearer ${session.accessToken}` } }
+        );
+        if (!res.ok) throw new Error("Failed to fetch files");
+        setFiles(await res.json());
+        setNeedsRefresh(false);
+      } catch (e: any) {
+        setErrorMsg(e.message || "Error loading files");
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, [session?.accessToken, needsRefresh]);
 
-  async function fetchFiles() {
-    setLoading(true);
-    setErrorMsg("");
+  /* -------------------------- selection helpers -------------------- */
+  /** CTRL / ⌘ additive toggle */
+  const toggleSelect = (id: number, additive: boolean) =>
+    setSelectedIds((prev) => {
+      const next = new Set(additive ? prev : []);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  const clearSelection = () => setSelectedIds(new Set());
+
+  /* -------------------------- lasso select ------------------------- */
+  const {
+    overlayRef,
+    boxStyle,
+    isVisible: lassoVisible,
+    onMouseDown: lassoMouseDown,
+    registerTile,
+  } = useLasso((ids) => setSelectedIds(new Set(ids)));
+
+  /* -------------------------- batch actions ------------------------ */
+  const copySelected = async () => {
+    if (selectedIds.size === 0) return;
+    const map = new Map(files.map((f) => [f.file_id, f.direct_link]));
+    const urls = Array.from(selectedIds).map((id) => map.get(id));
     try {
+      await navigator.clipboard.writeText(urls.join("\n"));
+      setActionMsg("URLs copied!");
+    } catch {
+      setActionMsg("Copy failed");
+    }
+  };
+
+  const batchDownload = async () => {
+    if (selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+    const url =
+      `${process.env.NEXT_PUBLIC_BACKEND_URL}/files/batch-download?ids=${ids.join(
+        ","
+      )}` + (session?.accessToken ? `&token=${session.accessToken}` : "");
+    try {
+      setDownloadingId(-1);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Download failed");
+      const blob = await res.blob();
+      const href = URL.createObjectURL(blob);
+      Object.assign(document.createElement("a"), {
+        href,
+        download: "files.zip",
+      }).click();
+      URL.revokeObjectURL(href);
+    } catch (e: any) {
+      setErrorMsg(e.message || "ZIP error");
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const batchDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Delete ${selectedIds.size} files?`)) return;
+    try {
+      setLoading(true);
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/files/my-files`,
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/files/batch-delete`,
         {
-          headers: { Authorization: `Bearer ${session?.accessToken}` },
+          method: "DELETE",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.accessToken}`,
+          },
+          body: JSON.stringify({ ids: Array.from(selectedIds) }),
         }
       );
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.detail || "Failed to fetch files");
-      }
-      const data: FileItem[] = await res.json();
-      setFiles(data);
-      setNeedsRefresh(false);
-    } catch (err: any) {
-      setErrorMsg(err.message || "Error loading files");
+      if (!res.ok) throw new Error("Delete failed");
+      const data = await res.json();
+      setFiles((prev) =>
+        prev.filter((f) => !data.deleted.includes(f.file_id))
+      );
+      clearSelection();
+      setActionMsg(`${data.deleted.length} deleted`);
+    } catch (e: any) {
+      setErrorMsg(e.message || "Delete error");
     } finally {
       setLoading(false);
     }
+  };
+
+  /* -------------------------- single download ---------------------- */
+  const downloadOne = async (file: FileItem) => {
+    const url =
+      `${process.env.NEXT_PUBLIC_BACKEND_URL}/files/download/${file.file_id}` +
+      (session?.accessToken ? `?token=${session.accessToken}` : "");
+    try {
+      setDownloadingId(file.file_id);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Download failed");
+      const blob = await res.blob();
+      const href = URL.createObjectURL(blob);
+      Object.assign(document.createElement("a"), {
+        href,
+        download: file.original_filename ?? `file_${file.file_id}`,
+      }).click();
+      URL.revokeObjectURL(href);
+    } catch (e: any) {
+      setErrorMsg(e.message || "Download error");
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  /* ------------------------------------------------------------------ */
+  /*                               TILE                                 */
+  /* ------------------------------------------------------------------ */
+  function Tile({ file }: { file: FileItem }) {
+    const divRef = useRef<HTMLDivElement>(null);
+    const selected = selectedIds.has(file.file_id);
+    const Icon = useMemo(
+      () => iconFor(file.original_filename || "file"),
+      [file.original_filename]
+    );
+
+    /* register rect for lasso */
+    useEffect(() => {
+      if (!divRef.current) return;
+      const measure = () =>
+        registerTile(file.file_id, divRef.current!.getBoundingClientRect());
+      measure();
+      const ro = new ResizeObserver(measure);
+      ro.observe(divRef.current);
+      return () => ro.disconnect();
+    }, [registerTile]);
+
+    /** left click */
+    const handleClick = (e: ReactMouseEvent) => {
+      toggleSelect(file.file_id, e.ctrlKey || e.metaKey);
+      e.stopPropagation();
+    };
+
+    /** right‑click – adjust selection BEFORE Radix opens menu */
+    const handleCtx = (e: ReactMouseEvent) => {
+      if (!selectedIds.has(file.file_id)) {
+        setSelectedIds(new Set([file.file_id])); // focus this one
+      }
+    };
+
+    return (
+      <div
+        ref={divRef}
+        onClick={handleClick}
+        onContextMenu={handleCtx}
+        className={cn(
+          "relative flex flex-col items-center justify-center gap-2 p-4 rounded-lg cursor-pointer select-none outline-none",
+          "border border-theme-200/50 dark:border-theme-800/50",
+          "bg-theme-100/25 dark:bg-theme-900/25 hover:bg-theme-100/50 dark:hover:bg-theme-900/40",
+          "shadow-sm hover:shadow-md shadow-theme-500/5",
+          selected && "ring-2 ring-theme-500"
+        )}
+      >
+        {downloadingId === file.file_id ? (
+          <FiLoader className="w-6 h-6 animate-spin text-theme-700 dark:text-theme-300" />
+        ) : (
+          <Icon className="w-6 h-6 text-theme-700 dark:text-theme-300" />
+        )}
+        <p className="text-xs text-center break-all text-theme-700 dark:text-theme-300">
+          {file.original_filename || `file_${file.file_id}`}
+        </p>
+        {selected && (
+          <div className="absolute top-1 right-1 w-2 h-2 rounded-full bg-theme-500" />
+        )}
+      </div>
+    );
   }
 
-  /* ---------- Render ---------- */
+  /* ------------------------------------------------------------------ */
+  /*                               RENDER                               */
+  /* ------------------------------------------------------------------ */
   return (
     <div>
+      {/* Heading */}
       <h2
         className={cn(
           "text-xl font-semibold mb-4",
@@ -79,52 +259,151 @@ export default function MyFileTab() {
       >
         My Files
       </h2>
-      <p className="text-theme-600 dark:text-theme-400 mb-6">
-        Click an item to copy its direct URL.
-      </p>
 
+      {/* reserved bar to prevent layout shift */}
+      <div className="mb-3 flex items-center gap-3 min-h-[24px]">
+        {selectedIds.size > 0 && (
+          <>
+            <span className="text-sm">{selectedIds.size} selected</span>
+            <button
+              onClick={clearSelection}
+              className="text-xs px-2 py-0.5 bg-theme-200 dark:bg-theme-800 rounded"
+            >
+              Clear
+            </button>
+          </>
+        )}
+      </div>
+
+      {actionMsg && (
+        <p className="text-theme-600 dark:text-theme-400 mb-4">{actionMsg}</p>
+      )}
       {errorMsg && (
-        <div
-          className={cn(
-            "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400",
-            "p-3 rounded mb-4 border border-red-200/50 dark:border-red-800/50"
-          )}
-        >
+        <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 mb-4 rounded">
           {errorMsg}
         </div>
       )}
 
       {loading ? (
-        <p className="text-theme-600 dark:text-theme-400">Loading...</p>
+        <p>Loading…</p>
       ) : files.length === 0 ? (
-        <p className="text-theme-600 dark:text-theme-400">
-          No files uploaded yet.
-        </p>
+        <p>No files uploaded yet.</p>
       ) : (
-        <div className="space-y-4">
-          {files.map((file) => (
+        /* ------------- one single ContextMenu covering whole grid ---- */
+        <ContextMenu.Root>
+          <ContextMenu.Trigger asChild>
             <div
-              key={file.file_id}
-              onClick={() => copyUrl(file.direct_link)}
-              className={cn(
-                "border border-theme-200/50 dark:border-theme-800/50 rounded-lg",
-                "p-4 bg-theme-100/25 dark:bg-theme-900/25",
-                "transition-all duration-200 hover:shadow-md cursor-pointer"
-              )}
+              onMouseDown={(e) => {
+                if (e.ctrlKey || e.metaKey) return;
+                lassoMouseDown(e);
+              }}
+              className="relative select-none outline-none"
             >
-              <p className="font-medium text-theme-700 dark:text-theme-300 mb-1">
-                {file.original_filename || `File #${file.file_id}`}
-              </p>
-              <p className="text-sm text-theme-500 dark:text-theme-400 break-all">
-                {file.direct_link}
-              </p>
-              <p className="text-xs text-theme-400 dark:text-theme-600 mt-1">
-                (click to copy)
-              </p>
+              {/* lasso rectangle */}
+              {lassoVisible && (
+                <div
+                  ref={overlayRef}
+                  style={boxStyle}
+                  className="pointer-events-none fixed z-40 bg-theme-500/20 border border-theme-500"
+                />
+              )}
+
+              {/* grid */}
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-4">
+                {files.map((f) => (
+                  <Tile key={f.file_id} file={f} />
+                ))}
+              </div>
             </div>
-          ))}
-        </div>
+          </ContextMenu.Trigger>
+
+          {/* ----------------- Context Menu Content ------------------- */}
+          <ContextMenu.Content className={menuCls}>
+            {selectedIds.size <= 1 ? (
+              <>
+                {/* single‑file menu  */}
+                {(() => {
+                  const id = Array.from(selectedIds)[0];
+                  const file = files.find((f) => f.file_id === id);
+                  if (!file) return null;
+                  return (
+                    <>
+                      <CMI
+                        onSelect={() => window.open(file.direct_link, "_blank")}
+                      >
+                        <FiExternalLink className="mr-2" /> Open
+                      </CMI>
+                      <CMI
+                        onSelect={() =>
+                          navigator.clipboard.writeText(file.direct_link)
+                        }
+                      >
+                        <FiCopy className="mr-2" /> Copy URL
+                      </CMI>
+                      <CMI onSelect={() => downloadOne(file)}>
+                        <FiDownload className="mr-2" /> Download
+                      </CMI>
+                      <ContextMenu.Separator className="my-1 h-px bg-theme-200 dark:bg-theme-700" />
+                      <CMI
+                        onSelect={() => batchDelete()}
+                        className="text-red-600 dark:text-red-400"
+                      >
+                        <FiTrash className="mr-2" /> Delete
+                      </CMI>
+                    </>
+                  );
+                })()}
+              </>
+            ) : (
+              <>
+                {/* batch menu */}
+                <CMI onSelect={copySelected}>
+                  <FiCopy className="mr-2" /> Copy&nbsp;{selectedIds.size}&nbsp;URLs
+                </CMI>
+                <CMI onSelect={batchDownload}>
+                  <FiDownload className="mr-2" /> Download ZIP
+                </CMI>
+                <ContextMenu.Separator className="my-1 h-px bg-theme-200 dark:bg-theme-700" />
+                <CMI
+                  onSelect={batchDelete}
+                  className="text-red-600 dark:text-red-400"
+                >
+                  <FiTrash className="mr-2" /> Delete&nbsp;{selectedIds.size}
+                </CMI>
+              </>
+            )}
+          </ContextMenu.Content>
+        </ContextMenu.Root>
       )}
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*                       small helper components                       */
+/* ------------------------------------------------------------------ */
+const menuCls =
+  "min-w-[180px] bg-theme-50 dark:bg-theme-900 p-1 border border-theme-200 dark:border-theme-700 rounded-md shadow-lg z-50";
+
+function CMI({
+  children,
+  onSelect,
+  className = "",
+}: {
+  children: React.ReactNode;
+  onSelect: () => void;
+  className?: string;
+}) {
+  return (
+    <ContextMenu.Item
+      onSelect={onSelect}
+      className={cn(
+        "flex items-center px-2 py-1.5 text-sm rounded cursor-pointer outline-none",
+        "text-theme-800 dark:text-theme-200 hover:bg-theme-200/50 dark:hover:bg-theme-800/50",
+        className
+      )}
+    >
+      {children}
+    </ContextMenu.Item>
   );
 }
