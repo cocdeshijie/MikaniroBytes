@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.dependencies.auth import get_current_user
 from app.db.database import get_db
@@ -11,6 +12,7 @@ from app.db.models.group import Group
 from app.db.models.group_settings import GroupSettings
 from app.db.models.system_settings import SystemSettings
 from app.db.models.file import File
+from app.db.models.user_session import UserSession
 
 router = APIRouter()
 
@@ -245,7 +247,7 @@ def update_system_settings(
         settings.public_upload_enabled = payload.public_upload_enabled
 
     if payload.default_user_group_id is not None:
-        # optionally validate the group exists
+        # validate the group exists
         group = db.query(Group).filter(Group.id == payload.default_user_group_id).first()
         if not group:
             raise HTTPException(status_code=400, detail="Group with that ID not found.")
@@ -260,3 +262,127 @@ def update_system_settings(
         public_upload_enabled=settings.public_upload_enabled,
         default_user_group_id=settings.default_user_group_id
     )
+
+
+class UserRead(BaseModel):
+    id: int
+    username: str
+    email: Optional[str]
+    group: Optional[dict]
+    file_count: int
+    storage_bytes: int
+
+    class Config:
+        orm_mode = True
+
+
+class UserGroupUpdate(BaseModel):
+    group_id: int
+
+
+@router.get("/users", response_model=List[UserRead])
+def list_users(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    ensure_superadmin(current_user)
+
+    users = db.query(User).all()
+    rows: list[UserRead] = []
+    for u in users:
+        count, total = db.query(
+            func.count(File.id),
+            func.coalesce(func.sum(File.size), 0),
+        ).filter(File.user_id == u.id).first()
+
+        rows.append(
+            UserRead(
+                id=u.id,
+                username=u.username,
+                email=u.email,
+                group={"id": u.group.id, "name": u.group.name} if u.group else None,
+                file_count=count,
+                storage_bytes=total,
+            )
+        )
+    return rows
+
+
+@router.put("/users/{user_id}/group", response_model=UserRead)
+def update_user_group(
+    user_id: int,
+    payload: UserGroupUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    ensure_superadmin(current_user)
+
+    target = db.query(User).filter_by(id=user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if target.group and target.group.name == "SUPER_ADMIN":
+        raise HTTPException(status_code=400, detail="Cannot modify SUPER_ADMIN.")
+
+    new_group = db.query(Group).filter_by(id=payload.group_id).first()
+    if not new_group:
+        raise HTTPException(status_code=400, detail="Group not found.")
+    if new_group.name == "SUPER_ADMIN":
+        raise HTTPException(
+            status_code=400,
+            detail="Promoting to SUPER_ADMIN is not permitted.",
+        )
+
+    target.group_id = new_group.id
+    db.add(target)
+    db.commit()
+    db.refresh(target)
+
+    count, total = db.query(
+        func.count(File.id),
+        func.coalesce(func.sum(File.size), 0),
+    ).filter(File.user_id == target.id).first()
+
+    return UserRead(
+        id=target.id,
+        username=target.username,
+        email=target.email,
+        group={"id": new_group.id, "name": new_group.name},
+        file_count=count,
+        storage_bytes=total,
+    )
+
+
+@router.delete("/users/{user_id}")
+def delete_user(
+    user_id: int,
+    delete_files: bool = Query(False),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Delete a normal user and (optionally) their files.
+    Sessions are removed explicitly first to avoid FK issues.
+    """
+    ensure_superadmin(current_user)
+
+    target = db.query(User).filter_by(id=user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if target.group and target.group.name == "SUPER_ADMIN":
+        raise HTTPException(status_code=400, detail="Cannot delete SUPER_ADMIN.")
+
+    # 1) remove sessions (prevents NOT‑NULL FK updates)
+    db.query(UserSession).filter(UserSession.user_id == user_id).delete(
+        synchronize_session=False
+    )
+
+    # 2) optionally delete files
+    if delete_files:
+        db.query(File).filter(File.user_id == user_id).delete(
+            synchronize_session=False
+        )
+
+    # 3) finally delete user
+    db.delete(target)
+    db.commit()
+    return {"detail": f"User {target.username} deleted.", "files_deleted": delete_files}
