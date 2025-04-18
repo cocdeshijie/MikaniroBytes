@@ -4,6 +4,7 @@ import { atom, useAtom } from "jotai";
 import { useMemo } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { cn } from "@/utils/cn";
+import { useToast } from "@/providers/toast-provider"; // ★ NEW
 
 /** Same shape as in GroupsTab. */
 interface GroupItem {
@@ -22,10 +23,8 @@ function parseSizeToBytes(input: string): number | null {
   const trimmed = input.trim().toLowerCase();
   if (!trimmed) return null; // blank => unlimited
 
-  const regex = /^([\d.,]+)\s*(b|kb|mb|gb|tb)?$/;
-  const match = trimmed.match(regex);
+  const match = trimmed.match(/^([\d.,]+)\s*(b|kb|mb|gb|tb)?$/);
   if (!match) {
-    // try pure number => treat as raw bytes
     const asNumber = parseFloat(trimmed);
     if (isNaN(asNumber)) return null;
     return Math.round(asNumber);
@@ -34,26 +33,8 @@ function parseSizeToBytes(input: string): number | null {
   if (isNaN(numericPart)) return null;
   const unit = match[2] || "b";
 
-  switch (unit) {
-    case "b":
-      // no-op
-      break;
-    case "kb":
-      numericPart *= 1_000;
-      break;
-    case "mb":
-      numericPart *= 1_000_000;
-      break;
-    case "gb":
-      numericPart *= 1_000_000_000;
-      break;
-    case "tb":
-      numericPart *= 1_000_000_000_000;
-      break;
-    default:
-      return null;
-  }
-  return Math.round(numericPart);
+  const multipliers = { b: 1, kb: 1_000, mb: 1_000_000, gb: 1_000_000_000, tb: 1_000_000_000_000 };
+  return Math.round(numericPart * multipliers[unit as keyof typeof multipliers]);
 }
 
 export default function AddGroupDialog({
@@ -63,7 +44,9 @@ export default function AddGroupDialog({
   sessionToken: string;
   onCreated: (newGroup: GroupItem) => void;
 }) {
-  // ---------- Define stable local atoms with useMemo ----------
+  const { push } = useToast(); // ★ NEW
+
+  /* ---------- Define stable local atoms with useMemo ---------- */
   const dialogOpenAtom = useMemo(() => atom(false), []);
   const nameAtom = useMemo(() => atom(""), []);
   const allowedAtom = useMemo(() => atom("jpg,png,gif"), []);
@@ -72,7 +55,7 @@ export default function AddGroupDialog({
   const errorMsgAtom = useMemo(() => atom(""), []);
   const loadingAtom = useMemo(() => atom(false), []);
 
-  // ---------- Use those atoms in local state ----------
+  /* ---------- Use those atoms in local state ---------- */
   const [open, setOpen] = useAtom(dialogOpenAtom);
   const [name, setName] = useAtom(nameAtom);
   const [allowedExt, setAllowedExt] = useAtom(allowedAtom);
@@ -81,6 +64,9 @@ export default function AddGroupDialog({
   const [errorMsg, setErrorMsg] = useAtom(errorMsgAtom);
   const [loading, setLoading] = useAtom(loadingAtom);
 
+  /* ------------------------------------------------------------------ */
+  /*                              create                                */
+  /* ------------------------------------------------------------------ */
   async function handleCreate() {
     setErrorMsg("");
     setLoading(true);
@@ -132,13 +118,19 @@ export default function AddGroupDialog({
       setMaxFileSize("10mb");
       setMaxStorage("");
       setOpen(false);
+
+      push({ title: "Group created", description: newGroup.name, variant: "success" }); // ★
     } catch (err: any) {
       setErrorMsg(err.message || "Error creating group");
+      push({ title: "Create failed", variant: "error" }); // ★
     } finally {
       setLoading(false);
     }
   }
 
+  /* ------------------------------------------------------------------ */
+  /*                                UI                                  */
+  /* ------------------------------------------------------------------ */
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Trigger asChild>

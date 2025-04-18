@@ -6,9 +6,15 @@ import { useSession } from "next-auth/react";
 import * as Select from "@radix-ui/react-select";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Tooltip from "@radix-ui/react-tooltip";
-import { BiChevronDown, BiChevronUp, BiCheck, BiTrash } from "react-icons/bi";
+import {
+  BiChevronDown,
+  BiChevronUp,
+  BiCheck,
+  BiTrash,
+} from "react-icons/bi";
 import { cn } from "@/utils/cn";
 import { ByteValueTooltip } from "../groups/ByteValueTooltip";
+import { useToast } from "@/providers/toast-provider"; // ★ NEW
 
 /* ---------- Types shared with backend ---------- */
 interface GroupItem {
@@ -28,19 +34,16 @@ interface UserItem {
 /* ---------- Local atoms ---------- */
 const loadingAtom = atom(false);
 const errorMsgAtom = atom("");
-const successMsgAtom = atom("");
-
 const usersAtom = atom<UserItem[]>([]);
 const groupsAtom = atom<GroupItem[]>([]);
 const hasFetchedAtom = atom(false);
 
 export default function UsersTab() {
   const { data: session } = useSession();
+  const { push } = useToast(); // ★ NEW
 
   const [loading, setLoading] = useAtom(loadingAtom);
   const [errorMsg, setErrorMsg] = useAtom(errorMsgAtom);
-  const [successMsg, setSuccessMsg] = useAtom(successMsgAtom);
-
   const [users, setUsers] = useAtom(usersAtom);
   const [groups, setGroups] = useAtom(groupsAtom);
   const [hasFetched, setHasFetched] = useAtom(hasFetchedAtom);
@@ -58,12 +61,14 @@ export default function UsersTab() {
   async function fetchAll() {
     setLoading(true);
     setErrorMsg("");
-    setSuccessMsg("");
     try {
       /* 1) Users */
-      let res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/users`, {
-        headers: { Authorization: `Bearer ${session?.accessToken}` },
-      });
+      let res = await fetch(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/users`,
+        {
+          headers: { Authorization: `Bearer ${session?.accessToken}` },
+        }
+      );
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.detail || "Failed to fetch users");
@@ -83,7 +88,7 @@ export default function UsersTab() {
       setGroups(
         groupData
           .filter((g) => g.name !== "SUPER_ADMIN")
-          .map(({ id, name }) => ({ id, name })),
+          .map(({ id, name }) => ({ id, name }))
       );
     } catch (err: any) {
       setErrorMsg(err.message || "Error loading data");
@@ -96,7 +101,6 @@ export default function UsersTab() {
   async function handleGroupChange(userId: number, newGroupId: number) {
     setLoading(true);
     setErrorMsg("");
-    setSuccessMsg("");
     try {
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/users/${userId}/group`,
@@ -107,7 +111,7 @@ export default function UsersTab() {
             Authorization: `Bearer ${session?.accessToken}`,
           },
           body: JSON.stringify({ group_id: newGroupId }),
-        },
+        }
       );
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -115,9 +119,14 @@ export default function UsersTab() {
       }
       const updated: UserItem = await res.json();
       setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
-      setSuccessMsg(`Updated "${updated.username}"`);
+      push({
+        title: "Group updated",
+        description: updated.username,
+        variant: "success",
+      }); // ★
     } catch (err: any) {
       setErrorMsg(err.message || "Error updating group");
+      push({ title: "Update failed", variant: "error" }); // ★
     } finally {
       setLoading(false);
     }
@@ -126,11 +135,10 @@ export default function UsersTab() {
   async function handleDeleteUser(
     userId: number,
     deleteFiles: boolean,
-    close: () => void,
+    close: () => void
   ) {
     setLoading(true);
     setErrorMsg("");
-    setSuccessMsg("");
     try {
       const url = `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/users/${userId}?delete_files=${deleteFiles}`;
       const res = await fetch(url, {
@@ -142,10 +150,11 @@ export default function UsersTab() {
         throw new Error(data.detail || "Failed to delete user");
       }
       setUsers((prev) => prev.filter((u) => u.id !== userId));
-      setSuccessMsg("User deleted");
+      push({ title: "User deleted", variant: "success" }); // ★
       close();
     } catch (err: any) {
       setErrorMsg(err.message || "Error deleting user");
+      push({ title: "Delete failed", variant: "error" }); // ★
     } finally {
       setLoading(false);
     }
@@ -162,34 +171,25 @@ export default function UsersTab() {
       <div
         className={cn(
           "p-4 bg-theme-100/25 dark:bg-theme-900/25",
-          "rounded-lg border border-theme-200/50 dark:border-theme-800/50",
+          "rounded-lg border border-theme-200/50 dark:border-theme-800/50"
         )}
       >
         <h3 className="text-lg font-medium text-theme-700 dark:text-theme-300 mb-2">
           Users Management
         </h3>
         <p className="text-sm text-theme-500 dark:text-theme-400 mb-4">
-          View all accounts, change groups (except SUPER_ADMIN), or remove users.
+          View all accounts, change groups (except SUPER_ADMIN), or remove
+          users.
         </p>
 
         {errorMsg && (
           <div
             className={cn(
               "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400",
-              "p-3 rounded mb-4 border border-red-200/50 dark:border-red-800/50",
+              "p-3 rounded mb-4 border border-red-200/50 dark:border-red-800/50"
             )}
           >
             {errorMsg}
-          </div>
-        )}
-        {successMsg && (
-          <div
-            className={cn(
-              "bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400",
-              "p-3 rounded mb-4 border border-green-200/50 dark:border-green-800/50",
-            )}
-          >
-            {successMsg}
           </div>
         )}
 
@@ -205,7 +205,7 @@ export default function UsersTab() {
                 className={cn(
                   "p-4 rounded-lg border",
                   "border-theme-200/50 dark:border-theme-800/50",
-                  "bg-theme-50/20 dark:bg-theme-900/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4",
+                  "bg-theme-50/20 dark:bg-theme-900/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
                 )}
               >
                 {/* LEFT block */}
@@ -248,7 +248,7 @@ export default function UsersTab() {
                           "border-theme-200 dark:border-theme-700",
                           "bg-theme-50 dark:bg-theme-800",
                           "text-theme-900 dark:text-theme-100 text-sm",
-                          "focus:outline-none",
+                          "focus:outline-none"
                         )}
                       >
                         <Select.Value />
@@ -263,7 +263,7 @@ export default function UsersTab() {
                           className={cn(
                             "overflow-hidden rounded-lg shadow-lg z-50",
                             "bg-theme-50 dark:bg-theme-900",
-                            "border border-theme-200 dark:border-theme-700",
+                            "border border-theme-200 dark:border-theme-700"
                           )}
                         >
                           <Select.ScrollUpButton className="flex items-center justify-center py-1">
@@ -279,7 +279,7 @@ export default function UsersTab() {
                                   "flex items-center px-3 py-2 text-sm select-none cursor-pointer",
                                   "text-theme-700 dark:text-theme-300",
                                   "radix-state-checked:bg-theme-200 dark:radix-state-checked:bg-theme-700",
-                                  "hover:bg-theme-100 dark:hover:bg-theme-800",
+                                  "hover:bg-theme-100 dark:hover:bg-theme-800"
                                 )}
                               >
                                 <Select.ItemText>{g.name}</Select.ItemText>
@@ -334,7 +334,7 @@ function DeleteUserButton({
         <button
           className={cn(
             "p-2 rounded bg-red-600 text-white hover:bg-red-700",
-            "transition",
+            "transition"
           )}
         >
           <BiTrash className="h-4 w-4" />
@@ -346,7 +346,7 @@ function DeleteUserButton({
         <AlertDialog.Content
           className={cn(
             "fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2",
-            "bg-theme-50 dark:bg-theme-900 rounded-lg shadow-lg max-w-sm w-full p-6",
+            "bg-theme-50 dark:bg-theme-900 rounded-lg shadow-lg max-w-sm w-full p-6"
           )}
         >
           <AlertDialog.Title className="text-lg font-medium text-red-600 dark:text-red-400 mb-2">

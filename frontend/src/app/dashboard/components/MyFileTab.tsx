@@ -21,12 +21,12 @@ import {
 } from "react-icons/fi";
 import { atom, useAtom } from "jotai";
 import {
-  useCallback,
   useEffect,
   useMemo,
   useRef,
   MouseEvent as ReactMouseEvent,
 } from "react";
+import { useToast } from "@/providers/toast-provider";
 
 /* ------------------------------------------------------------------ */
 /*                    local atoms (component‑only)                    */
@@ -39,11 +39,12 @@ const errorMsgAtom = atom("");
 /* ------------------------------------------------------------------ */
 export default function MyFileTab() {
   const { data: session } = useSession();
+  const { push } = useToast();
 
   const [files, setFiles] = useAtom(filesAtom);
   const [needsRefresh, setNeedsRefresh] = useAtom(filesNeedsRefreshAtom);
   const [selectedIds, setSelectedIds] = useAtom(selectedIdsAtom);
-  const [actionMsg, setActionMsg] = useAtom(fileActionMsgAtom);
+  const [, setActionMsg] = useAtom(fileActionMsgAtom);
   const [loading, setLoading] = useAtom(loadingAtom);
   const [errorMsg, setErrorMsg] = useAtom(errorMsgAtom);
   const [downloadingId, setDownloadingId] = useAtom(
@@ -72,7 +73,6 @@ export default function MyFileTab() {
   }, [session?.accessToken, needsRefresh]);
 
   /* -------------------------- selection helpers -------------------- */
-  /** CTRL / ⌘ additive toggle */
   const toggleSelect = (id: number, additive: boolean) =>
     setSelectedIds((prev) => {
       const next = new Set(additive ? prev : []);
@@ -94,12 +94,18 @@ export default function MyFileTab() {
   const copySelected = async () => {
     if (selectedIds.size === 0) return;
     const map = new Map(files.map((f) => [f.file_id, f.direct_link]));
-    const urls = Array.from(selectedIds).map((id) => map.get(id));
+    const urls = Array.from(selectedIds)
+      .map((id) => map.get(id))
+      .join("\n");
     try {
-      await navigator.clipboard.writeText(urls.join("\n"));
-      setActionMsg("URLs copied!");
+      await navigator.clipboard.writeText(urls);
+      push({
+        title: "URLs copied",
+        description: `${selectedIds.size} copied to clipboard`,
+        variant: "success",
+      });
     } catch {
-      setActionMsg("Copy failed");
+      push({ title: "Copy failed", variant: "error" });
     }
   };
 
@@ -121,8 +127,10 @@ export default function MyFileTab() {
         download: "files.zip",
       }).click();
       URL.revokeObjectURL(href);
+      push({ title: "ZIP download started", variant: "success" });
     } catch (e: any) {
       setErrorMsg(e.message || "ZIP error");
+      push({ title: "ZIP failed", variant: "error" });
     } finally {
       setDownloadingId(null);
     }
@@ -146,13 +154,15 @@ export default function MyFileTab() {
       );
       if (!res.ok) throw new Error("Delete failed");
       const data = await res.json();
-      setFiles((prev) =>
-        prev.filter((f) => !data.deleted.includes(f.file_id))
-      );
+      setFiles((prev) => prev.filter((f) => !data.deleted.includes(f.file_id)));
       clearSelection();
-      setActionMsg(`${data.deleted.length} deleted`);
+      push({
+        title: `${data.deleted.length} file(s) deleted`,
+        variant: "success",
+      });
     } catch (e: any) {
       setErrorMsg(e.message || "Delete error");
+      push({ title: "Delete failed", variant: "error" });
     } finally {
       setLoading(false);
     }
@@ -174,8 +184,10 @@ export default function MyFileTab() {
         download: file.original_filename ?? `file_${file.file_id}`,
       }).click();
       URL.revokeObjectURL(href);
+      push({ title: "Download started", variant: "success" });
     } catch (e: any) {
       setErrorMsg(e.message || "Download error");
+      push({ title: "Download failed", variant: "error" });
     } finally {
       setDownloadingId(null);
     }
@@ -210,9 +222,9 @@ export default function MyFileTab() {
     };
 
     /** right‑click – adjust selection BEFORE Radix opens menu */
-    const handleCtx = (e: ReactMouseEvent) => {
+    const handleCtx = () => {
       if (!selectedIds.has(file.file_id)) {
-        setSelectedIds(new Set([file.file_id])); // focus this one
+        setSelectedIds(new Set([file.file_id]));
       }
     };
 
@@ -275,9 +287,6 @@ export default function MyFileTab() {
         )}
       </div>
 
-      {actionMsg && (
-        <p className="text-theme-600 dark:text-theme-400 mb-4">{actionMsg}</p>
-      )}
       {errorMsg && (
         <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 mb-4 rounded">
           {errorMsg}
@@ -289,7 +298,6 @@ export default function MyFileTab() {
       ) : files.length === 0 ? (
         <p>No files uploaded yet.</p>
       ) : (
-        /* ------------- one single ContextMenu covering whole grid ---- */
         <ContextMenu.Root>
           <ContextMenu.Trigger asChild>
             <div
@@ -318,10 +326,15 @@ export default function MyFileTab() {
           </ContextMenu.Trigger>
 
           {/* ----------------- Context Menu Content ------------------- */}
-          <ContextMenu.Content className={menuCls}>
+          <ContextMenu.Content
+            className={cn(
+              "min-w-[180px] bg-theme-50 dark:bg-theme-900 p-1 border",
+              "border-theme-200 dark:border-theme-700 rounded-md shadow-lg z-50"
+            )}
+          >
             {selectedIds.size <= 1 ? (
               <>
-                {/* single‑file menu  */}
+                {/* single‑file menu */}
                 {(() => {
                   const id = Array.from(selectedIds)[0];
                   const file = files.find((f) => f.file_id === id);
@@ -333,17 +346,28 @@ export default function MyFileTab() {
                       >
                         <FiExternalLink className="mr-2" /> Open
                       </CMI>
+
                       <CMI
-                        onSelect={() =>
-                          navigator.clipboard.writeText(file.direct_link)
-                        }
+                        onSelect={async () => {
+                          try {
+                            await navigator.clipboard.writeText(
+                              file.direct_link
+                            );
+                            push({ title: "URL copied", variant: "success" });
+                          } catch {
+                            push({ title: "Copy failed", variant: "error" });
+                          }
+                        }}
                       >
                         <FiCopy className="mr-2" /> Copy URL
                       </CMI>
+
                       <CMI onSelect={() => downloadOne(file)}>
                         <FiDownload className="mr-2" /> Download
                       </CMI>
+
                       <ContextMenu.Separator className="my-1 h-px bg-theme-200 dark:bg-theme-700" />
+
                       <CMI
                         onSelect={() => batchDelete()}
                         className="text-red-600 dark:text-red-400"
@@ -358,7 +382,8 @@ export default function MyFileTab() {
               <>
                 {/* batch menu */}
                 <CMI onSelect={copySelected}>
-                  <FiCopy className="mr-2" /> Copy&nbsp;{selectedIds.size}&nbsp;URLs
+                  <FiCopy className="mr-2" /> Copy&nbsp;{selectedIds.size}
+                  &nbsp;URLs
                 </CMI>
                 <CMI onSelect={batchDownload}>
                   <FiDownload className="mr-2" /> Download ZIP
@@ -382,9 +407,6 @@ export default function MyFileTab() {
 /* ------------------------------------------------------------------ */
 /*                       small helper components                       */
 /* ------------------------------------------------------------------ */
-const menuCls =
-  "min-w-[180px] bg-theme-50 dark:bg-theme-900 p-1 border border-theme-200 dark:border-theme-700 rounded-md shadow-lg z-50";
-
 function CMI({
   children,
   onSelect,

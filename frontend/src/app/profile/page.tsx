@@ -12,13 +12,22 @@ import {
   errorAtom,
   SessionItem,
 } from "@/atoms/auth";
+import { useToast } from "@/providers/toast-provider";
 
+/* ------------------------------------------------------------------ */
+/*                       local Jotai atoms                             */
+/* ------------------------------------------------------------------ */
 const oldPasswordAtom = atom("");
 const newPasswordAtom = atom("");
+
+/* ------------------------------------------------------------------ */
+/*                             COMPONENT                              */
+/* ------------------------------------------------------------------ */
 
 export default function UserPage() {
   const router = useRouter();
   const { data: session, status } = useSession();
+  const { push } = useToast(); // ★ NEW
 
   const [userInfo, setUserInfo] = useAtom(userInfoAtom);
   const [sessions, setSessions] = useAtom(sessionsAtom);
@@ -27,23 +36,22 @@ export default function UserPage() {
   const [oldPassword, setOldPassword] = useAtom(oldPasswordAtom);
   const [newPassword, setNewPassword] = useAtom(newPasswordAtom);
 
-  // If unauthenticated => redirect
+  /* ---------------- redirect if unauthenticated ---------------- */
   useEffect(() => {
     if (status === "unauthenticated") {
       router.replace("/auth/login");
     }
   }, [status, router]);
 
-  // Fetch user info once authenticated
+  /* ---------------- fetch user info & sessions ----------------- */
   useEffect(() => {
-    // Only run if authenticated & we have an accessToken
     if (status !== "authenticated" || !session?.accessToken) return;
 
     async function fetchUserInfoAndSessions() {
       setLoading(true);
       setErrorMsg("");
       try {
-        // 1) fetch user info
+        // 1) user info
         const meRes = await fetch("http://localhost:8000/auth/me", {
           headers: { Authorization: `Bearer ${session?.accessToken}` },
         });
@@ -53,7 +61,7 @@ export default function UserPage() {
         const meData = await meRes.json();
         setUserInfo(meData);
 
-        // 2) fetch sessions
+        // 2) sessions
         const sessRes = await fetch("http://localhost:8000/auth/sessions", {
           headers: { Authorization: `Bearer ${session?.accessToken}` },
         });
@@ -70,25 +78,32 @@ export default function UserPage() {
     }
 
     fetchUserInfoAndSessions();
-    // Only depends on external data (status & session?.accessToken),
-    // so we don't list setLoading, setErrorMsg, setUserInfo, setSessions
   }, [status, session?.accessToken]);
+
+  /* ------------------------------------------------------------------ */
+  /*                        helpers / handlers                          */
+  /* ------------------------------------------------------------------ */
 
   // Single session logout
   async function handleLogoutSession(sessionId: number) {
     setLoading(true);
     setErrorMsg("");
     try {
-      const res = await fetch(`http://localhost:8000/auth/sessions/${sessionId}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${session?.accessToken}` },
-      });
+      const res = await fetch(
+        `http://localhost:8000/auth/sessions/${sessionId}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${session?.accessToken}` },
+        }
+      );
       if (!res.ok) {
         throw new Error("Failed to revoke session");
       }
       setSessions((prev) => prev.filter((s) => s.session_id !== sessionId));
+      push({ title: "Session revoked", variant: "success" }); // ★
     } catch (err: any) {
       setErrorMsg(err.message || "Error revoking session");
+      push({ title: "Revoke failed", variant: "error" }); // ★
     } finally {
       setLoading(false);
     }
@@ -108,8 +123,10 @@ export default function UserPage() {
         throw new Error("Failed to logout all sessions");
       }
       setSessions([]);
+      push({ title: "Logged out everywhere", variant: "success" }); // ★
     } catch (err: any) {
       setErrorMsg(err.message || "Error logging out all sessions");
+      push({ title: "Logout-all failed", variant: "error" }); // ★
     } finally {
       setLoading(false);
     }
@@ -127,22 +144,28 @@ export default function UserPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session?.accessToken}`,
         },
-        body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
+        body: JSON.stringify({
+          old_password: oldPassword,
+          new_password: newPassword,
+        }),
       });
       if (!res.ok) {
         throw new Error("Failed to change password");
       }
-      alert("Password changed successfully!");
+      push({ title: "Password updated", variant: "success" }); // ★
       setOldPassword("");
       setNewPassword("");
     } catch (err: any) {
       setErrorMsg(err.message || "Error changing password");
+      push({ title: "Password change failed", variant: "error" }); // ★
     } finally {
       setLoading(false);
     }
   }
 
-  // --- RENDER ---
+  /* ------------------------------------------------------------------ */
+  /*                          conditional UIs                           */
+  /* ------------------------------------------------------------------ */
   if (status === "loading" || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-theme-50 dark:bg-theme-950">
@@ -185,6 +208,9 @@ export default function UserPage() {
     );
   }
 
+  /* ------------------------------------------------------------------ */
+  /*                                 UI                                 */
+  /* ------------------------------------------------------------------ */
   return (
     <div className="min-h-screen bg-theme-50 dark:bg-theme-950">
       {/* Top header */}
@@ -234,9 +260,18 @@ export default function UserPage() {
       {/* Main content */}
       <section className="relative bg-theme-50 dark:bg-theme-950">
         <div
-          className={cn("hidden md:block absolute inset-0", "bg-theme-100 dark:bg-theme-900", "opacity-20")}
+          className={cn(
+            "hidden md:block absolute inset-0",
+            "bg-theme-100 dark:bg-theme-900",
+            "opacity-20"
+          )}
         />
-        <div className={cn("relative py-6", "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8")}>
+        <div
+          className={cn(
+            "relative py-6",
+            "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"
+          )}
+        >
           <div className="md:grid md:grid-cols-12 md:gap-6">
             {/* Left column */}
             <div className="md:col-span-4 space-y-6 mb-6 md:mb-0">
@@ -262,24 +297,34 @@ export default function UserPage() {
                   {userInfo ? (
                     <div className="space-y-4">
                       <div className="flex flex-col space-y-1">
-                        <span className="text-sm text-theme-500 dark:text-theme-400">User ID</span>
-                        <p className="text-theme-700 dark:text-theme-300 font-medium">{userInfo.id}</p>
+                        <span className="text-sm text-theme-500 dark:text-theme-400">
+                          User ID
+                        </span>
+                        <p className="text-theme-700 dark:text-theme-300 font-medium">
+                          {userInfo.id}
+                        </p>
                       </div>
                       <div className="flex flex-col space-y-1">
-                        <span className="text-sm text-theme-500 dark:text-theme-400">Username</span>
+                        <span className="text-sm text-theme-500 dark:text-theme-400">
+                          Username
+                        </span>
                         <p className="text-theme-700 dark:text-theme-300 font-medium">
                           {userInfo.username}
                         </p>
                       </div>
                       <div className="flex flex-col space-y-1">
-                        <span className="text-sm text-theme-500 dark:text-theme-400">Email</span>
+                        <span className="text-sm text-theme-500 dark:text-theme-400">
+                          Email
+                        </span>
                         <p className="text-theme-700 dark:text-theme-300 font-medium">
                           {userInfo.email || "(none)"}
                         </p>
                       </div>
                     </div>
                   ) : (
-                    <p className="text-theme-600 dark:text-theme-400 italic">No user information available.</p>
+                    <p className="text-theme-600 dark:text-theme-400 italic">
+                      No user information available.
+                    </p>
                   )}
                 </div>
               </div>
@@ -303,7 +348,10 @@ export default function UserPage() {
                   >
                     Change Password
                   </h2>
-                  <form onSubmit={handleChangePassword} className="space-y-4">
+                  <form
+                    onSubmit={handleChangePassword}
+                    className="space-y-4"
+                  >
                     <div>
                       <label className="block mb-2 text-sm font-medium text-theme-700 dark:text-theme-300">
                         Current Password
@@ -371,7 +419,10 @@ export default function UserPage() {
                 <div className="p-5">
                   <div className="flex items-center justify-between mb-4">
                     <h2
-                      className={cn("text-xl font-semibold", "text-theme-900 dark:text-theme-100")}
+                      className={cn(
+                        "text-xl font-semibold",
+                        "text-theme-900 dark:text-theme-100"
+                      )}
                     >
                       Active Sessions
                     </h2>
@@ -405,9 +456,13 @@ export default function UserPage() {
                           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                             <div className="space-y-2 flex-1">
                               <div className="flex flex-col">
-                                <span className="text-sm text-theme-500 dark:text-theme-400">Token</span>
+                                <span className="text-sm text-theme-500 dark:text-theme-400">
+                                  Token
+                                </span>
                                 <p className="text-theme-700 dark:text-theme-300 text-sm font-mono overflow-hidden text-ellipsis">
-                                  {s.token.length > 20 ? s.token.substring(0, 20) + "..." : s.token}
+                                  {s.token.length > 20
+                                    ? s.token.substring(0, 20) + "..."
+                                    : s.token}
                                 </p>
                               </div>
 

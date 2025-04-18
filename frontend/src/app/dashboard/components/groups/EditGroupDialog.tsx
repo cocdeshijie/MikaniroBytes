@@ -4,6 +4,7 @@ import { atom, useAtom } from "jotai";
 import { useMemo } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { cn } from "@/utils/cn";
+import { useToast } from "@/providers/toast-provider"; // ★ NEW
 
 /** Same shape as in GroupsTab. */
 interface GroupItem {
@@ -18,36 +19,19 @@ function parseSizeToBytes(input: string): number | null {
   const trimmed = input.trim().toLowerCase();
   if (!trimmed) return null; // blank => unlimited
 
-  const regex = /^([\d.,]+)\s*(b|kb|mb|gb|tb)?$/;
-  const match = trimmed.match(regex);
+  const match = trimmed.match(/^([\d.,]+)\s*(b|kb|mb|gb|tb)?$/);
   if (!match) {
     const asNumber = parseFloat(trimmed);
     if (isNaN(asNumber)) return null;
     return Math.round(asNumber);
   }
+
   let numericPart = parseFloat(match[1].replace(",", "."));
   if (isNaN(numericPart)) return null;
   const unit = match[2] || "b";
 
-  switch (unit) {
-    case "b":
-      break;
-    case "kb":
-      numericPart *= 1_000;
-      break;
-    case "mb":
-      numericPart *= 1_000_000;
-      break;
-    case "gb":
-      numericPart *= 1_000_000_000;
-      break;
-    case "tb":
-      numericPart *= 1_000_000_000_000;
-      break;
-    default:
-      return null;
-  }
-  return Math.round(numericPart);
+  const multipliers = { b: 1, kb: 1_000, mb: 1_000_000, gb: 1_000_000_000, tb: 1_000_000_000_000 };
+  return Math.round(numericPart * multipliers[unit as keyof typeof multipliers]);
 }
 
 export default function EditGroupDialog({
@@ -59,7 +43,9 @@ export default function EditGroupDialog({
   sessionToken: string;
   onUpdated: (updated: GroupItem) => void;
 }) {
-  // ---------- Define stable local atoms once per dialog instance ----------
+  const { push } = useToast(); // ★ NEW
+
+  /* ---------- Define stable local atoms once per dialog instance ---------- */
   const dialogOpenAtom = useMemo(() => atom(false), []);
   const nameAtom = useMemo(() => atom(group.name), [group]);
   const allowedAtom = useMemo(
@@ -75,7 +61,7 @@ export default function EditGroupDialog({
   const errorMsgAtom = useMemo(() => atom(""), []);
   const loadingAtom = useMemo(() => atom(false), []);
 
-  // ---------- Use those atoms in local state ----------
+  /* ---------- Use those atoms in local state ---------- */
   const [open, setOpen] = useAtom(dialogOpenAtom);
   const [name, setName] = useAtom(nameAtom);
   const [allowedExt, setAllowedExt] = useAtom(allowedAtom);
@@ -84,12 +70,15 @@ export default function EditGroupDialog({
   const [errorMsg, setErrorMsg] = useAtom(errorMsgAtom);
   const [loading, setLoading] = useAtom(loadingAtom);
 
+  /* ------------------------------------------------------------------ */
+  /*                              update                                */
+  /* ------------------------------------------------------------------ */
   async function handleUpdate() {
     setErrorMsg("");
     setLoading(true);
     try {
       const isSuperAdmin = group.name === "SUPER_ADMIN";
-      // For SUPER_ADMIN, the backend won't allow renaming, so we keep it the same
+      // For SUPER_ADMIN, backend won't allow renaming, so we keep it the same
       let finalName = name.trim();
       if (isSuperAdmin) {
         finalName = "SUPER_ADMIN";
@@ -137,13 +126,18 @@ export default function EditGroupDialog({
 
       // close
       setOpen(false);
+      push({ title: "Group updated", description: updatedGroup.name, variant: "success" }); // ★
     } catch (err: any) {
       setErrorMsg(err.message || "Error updating group");
+      push({ title: "Update failed", variant: "error" }); // ★
     } finally {
       setLoading(false);
     }
   }
 
+  /* ------------------------------------------------------------------ */
+  /*                                UI                                  */
+  /* ------------------------------------------------------------------ */
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Trigger asChild>

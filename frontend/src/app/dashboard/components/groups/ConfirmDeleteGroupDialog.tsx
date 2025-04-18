@@ -3,6 +3,7 @@
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { useState } from "react";
 import { cn } from "@/utils/cn";
+import { useToast } from "@/providers/toast-provider"; // ★ NEW
 
 interface GroupItem {
   id: number;
@@ -21,12 +22,12 @@ export default function ConfirmDeleteGroupDialog({
   sessionToken: string;
   onDeleted: (groupId: number, deleteFiles: boolean) => void;
 }) {
+  const { push } = useToast(); // ★ NEW
   const [open, setOpen] = useState(false);
   const [deleteFiles, setDeleteFiles] = useState(false);
   const [loading, setLoading] = useState(false);
 
   async function handleConfirm() {
-    // Perform the actual delete call
     setLoading(true);
     try {
       const url = `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/groups/${group.id}?delete_files=${deleteFiles}`;
@@ -38,11 +39,12 @@ export default function ConfirmDeleteGroupDialog({
         const data = await res.json().catch(() => ({}));
         throw new Error(data.detail || "Failed to delete group");
       }
-      // Let parent know we removed it
       onDeleted(group.id, deleteFiles);
       setOpen(false);
+      push({ title: "Group deleted", description: group.name, variant: "success" }); // ★
     } catch (err: any) {
       alert(err.message || "Error deleting group");
+      push({ title: "Delete failed", variant: "error" }); // ★
     } finally {
       setLoading(false);
     }
@@ -63,9 +65,7 @@ export default function ConfirmDeleteGroupDialog({
 
       <AlertDialog.Portal>
         <AlertDialog.Overlay
-          className={cn(
-            "bg-black/30 backdrop-blur-sm fixed inset-0 z-50"
-          )}
+          className={cn("bg-black/30 backdrop-blur-sm fixed inset-0 z-50")}
         />
         <AlertDialog.Content
           className={cn(
@@ -78,8 +78,8 @@ export default function ConfirmDeleteGroupDialog({
             Delete Group "{group.name}"?
           </AlertDialog.Title>
           <AlertDialog.Description className="text-sm text-theme-600 dark:text-theme-300 mb-4">
-            Deleting a group also deletes all users in that group. Optionally, you
-            can also remove all their files.
+            Deleting a group also deletes all users in that group. Optionally,
+            you can also remove all their files.
           </AlertDialog.Description>
 
           <div className="mb-4 flex items-center space-x-2">

@@ -6,6 +6,7 @@ import { atom, useAtom } from "jotai";
 import * as Select from "@radix-ui/react-select";
 import { BiChevronDown, BiChevronUp, BiCheck } from "react-icons/bi";
 import { cn } from "@/utils/cn";
+import { useToast } from "@/providers/toast-provider"; // ★ NEW
 
 interface GroupItem {
   id: number;
@@ -21,7 +22,6 @@ interface SystemSettingsData {
 /* ---------- Jotai atoms ---------- */
 const loadingAtom = atom(false);
 const errorMsgAtom = atom("");
-const successMsgAtom = atom("");
 const hasFetchedAtom = atom(false);
 
 const configAtom = atom<SystemSettingsData>({
@@ -34,10 +34,10 @@ const groupsAtom = atom<GroupItem[]>([]);
 
 export default function ConfigsTab() {
   const { data: session } = useSession();
+  const { push } = useToast(); // ★ NEW
 
   const [loading, setLoading] = useAtom(loadingAtom);
   const [errorMsg, setErrorMsg] = useAtom(errorMsgAtom);
-  const [successMsg, setSuccessMsg] = useAtom(successMsgAtom);
   const [hasFetched, setHasFetched] = useAtom(hasFetchedAtom);
 
   const [config, setConfig] = useAtom(configAtom);
@@ -56,12 +56,11 @@ export default function ConfigsTab() {
   async function fetchConfigAndGroups() {
     setLoading(true);
     setErrorMsg("");
-    setSuccessMsg("");
     try {
       /* 1) system‑settings */
       let res = await fetch(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/system-settings`,
-        { headers: { Authorization: `Bearer ${session?.accessToken}` } },
+        { headers: { Authorization: `Bearer ${session?.accessToken}` } }
       );
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -118,7 +117,6 @@ export default function ConfigsTab() {
   async function handleSaveChanges() {
     setLoading(true);
     setErrorMsg("");
-    setSuccessMsg("");
     try {
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/system-settings`,
@@ -129,7 +127,7 @@ export default function ConfigsTab() {
             Authorization: `Bearer ${session?.accessToken}`,
           },
           body: JSON.stringify(config),
-        },
+        }
       );
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -137,19 +135,23 @@ export default function ConfigsTab() {
       }
       const updated: SystemSettingsData = await res.json();
       setConfig(updated);
-      setSuccessMsg("Settings updated successfully!");
+      push({ title: "Settings updated", variant: "success" }); // ★
     } catch (err: any) {
       setErrorMsg(err.message || "Error saving settings");
+      push({ title: "Save failed", variant: "error" }); // ★
     } finally {
       setLoading(false);
     }
   }
 
+  /* ------------------------------------------------------------------ */
+  /*                                UI                                  */
+  /* ------------------------------------------------------------------ */
   return (
     <div
       className={cn(
         "p-4 bg-theme-100/25 dark:bg-theme-900/25",
-        "rounded-lg border border-theme-200/50 dark:border-theme-800/50",
+        "rounded-lg border border-theme-200/50 dark:border-theme-800/50"
       )}
     >
       <h3 className="text-lg font-medium text-theme-700 dark:text-theme-300 mb-2">
@@ -163,20 +165,10 @@ export default function ConfigsTab() {
         <div
           className={cn(
             "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400",
-            "p-3 rounded mb-4 border border-red-200/50 dark:border-red-800/50",
+            "p-3 rounded mb-4 border border-red-200/50 dark:border-red-800/50"
           )}
         >
           {errorMsg}
-        </div>
-      )}
-      {successMsg && (
-        <div
-          className={cn(
-            "bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400",
-            "p-3 rounded mb-4 border border-green-200/50 dark:border-green-800/50",
-          )}
-        >
-          {successMsg}
         </div>
       )}
 
@@ -227,9 +219,7 @@ export default function ConfigsTab() {
             </label>
 
             <Select.Root
-              value={
-                (config.default_user_group_id ?? groups[0].id).toString()
-              }
+              value={(config.default_user_group_id ?? groups[0].id).toString()}
               onValueChange={handleGroupChange}
             >
               <Select.Trigger
@@ -238,7 +228,7 @@ export default function ConfigsTab() {
                   "border-theme-200 dark:border-theme-700",
                   "bg-theme-50 dark:bg-theme-800",
                   "text-theme-900 dark:text-theme-100",
-                  "focus:outline-none focus:ring-2 focus:ring-theme-500/50",
+                  "focus:outline-none focus:ring-2 focus:ring-theme-500/50"
                 )}
               >
                 <Select.Value />
@@ -253,7 +243,7 @@ export default function ConfigsTab() {
                   className={cn(
                     "overflow-hidden rounded-lg shadow-lg z-50",
                     "bg-theme-50 dark:bg-theme-900",
-                    "border border-theme-200 dark:border-theme-700",
+                    "border border-theme-200 dark:border-theme-700"
                   )}
                 >
                   <Select.ScrollUpButton className="flex items-center justify-center py-1">
@@ -269,7 +259,7 @@ export default function ConfigsTab() {
                           "flex items-center px-3 py-2 text-sm select-none cursor-pointer",
                           "text-theme-700 dark:text-theme-300",
                           "radix-state-checked:bg-theme-200 dark:radix-state-checked:bg-theme-700",
-                          "hover:bg-theme-100 dark:hover:bg-theme-800",
+                          "hover:bg-theme-100 dark:hover:bg-theme-800"
                         )}
                       >
                         <Select.ItemText>{g.name}</Select.ItemText>
@@ -295,7 +285,7 @@ export default function ConfigsTab() {
         onClick={handleSaveChanges}
         className={cn(
           "px-4 py-2 rounded bg-theme-500 text-white hover:bg-theme-600",
-          "transition disabled:bg-theme-300",
+          "transition disabled:bg-theme-300"
         )}
       >
         {loading ? "Saving..." : "Save Changes"}
