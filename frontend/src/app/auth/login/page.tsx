@@ -5,62 +5,69 @@ import { useRouter } from "next/navigation";
 import { signIn, useSession } from "next-auth/react";
 import { useAtom, atom } from "jotai";
 import { cn } from "@/utils/cn";
+import { useToast } from "@/providers/toast-provider";
 
 const usernameAtom = atom("");
 const passwordAtom = atom("");
-const errorMsgAtom = atom("");
 
 /**
- * Login Page with modern minimal styling
+ * Login Page using Radix Toast for feedback.
  */
 export default function LoginPage() {
   const router = useRouter();
-  const { data: session, status } = useSession();
+  const { data: session } = useSession();
+  const { push } = useToast();
 
   const [username, setUsername] = useAtom(usernameAtom);
   const [password, setPassword] = useAtom(passwordAtom);
-  const [errorMsg, setErrorMsg] = useAtom(errorMsgAtom);
 
   async function handleLogin(e: FormEvent) {
     e.preventDefault();
-    setErrorMsg("");
 
     try {
-      // NextAuth credentials signIn
       const res = await signIn("credentials", {
         username,
         password,
-        redirect: false, // we'll handle the redirect manually
+        redirect: false,
       });
 
       if (res?.error) {
-        // e.g. "Invalid credentials"
-        setErrorMsg(res.error);
+        push({
+          title: "Login Failed",
+          description: res.error,
+          variant: "error",
+        });
         return;
       }
 
-      // If login was successful, redirect to user dashboard
+      push({ title: "Welcome back!", variant: "success" });
       router.push("/profile");
     } catch (err: any) {
-      setErrorMsg(err?.message ?? "Login failed.");
+      push({
+        title: "Login Error",
+        description: err?.message ?? "Login failed.",
+        variant: "error",
+      });
     }
   }
 
   return (
-    <div className={cn(
-      "min-h-screen flex flex-col items-center justify-center",
-      "bg-theme-50 dark:bg-theme-950",
-      "p-4"
-    )}>
+    <div
+      className={cn(
+        "min-h-screen flex flex-col items-center justify-center",
+        "bg-theme-50 dark:bg-theme-950",
+        "p-4"
+      )}
+    >
       <div className="max-w-md w-full">
-        <div className={cn(
-          "mb-10",
-        )}>
-          <h1 className={cn(
-            "text-xl sm:text-3xl lg:text-4xl font-bold",
-            "text-theme-900 dark:text-theme-100",
-            "leading-tight flex items-center gap-2",
-          )}>
+        <div className={cn("mb-10")}>
+          <h1
+            className={cn(
+              "text-xl sm:text-3xl lg:text-4xl font-bold",
+              "text-theme-900 dark:text-theme-100",
+              "leading-tight flex items-center gap-2"
+            )}
+          >
             Sign In
             <div className="h-1 w-12 bg-theme-500 rounded-full inline-block ml-2"></div>
           </h1>
@@ -79,17 +86,6 @@ export default function LoginPage() {
         >
           {/* Form */}
           <div className="p-8">
-            {errorMsg && (
-              <div className={cn(
-                "bg-red-50 dark:bg-red-900/20",
-                "text-red-600 dark:text-red-400",
-                "p-4 mb-6 rounded-lg",
-                "border border-red-100 dark:border-red-800/50"
-              )}>
-                {errorMsg}
-              </div>
-            )}
-
             <div className="mb-6">
               <label
                 htmlFor="username"

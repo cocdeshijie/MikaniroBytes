@@ -2,7 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-
 .light {
     --scrollbar: theme('colors.theme.500');
     --scrollbar-bg: theme('colors.theme.200');
@@ -61,4 +60,25 @@
     * {
         scrollbar-width: auto;
     }
+}
+
+/* ------------------------------------------------------------------ */
+/*                    Radix Toast utility animations                   */
+/* ------------------------------------------------------------------ */
+@layer utilities {
+  @keyframes slideInRight {
+    from { opacity: 0; transform: translateX(calc(100% + 1rem)); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes fadeOut {
+    from { opacity: 1; }
+    to   { opacity: 0; }
+  }
+
+  .animate-slideIn {
+    animation: slideInRight 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .animate-hide {
+    animation: fadeOut 0.2s ease-in forwards;
+  }
 }
