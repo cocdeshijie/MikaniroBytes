@@ -152,7 +152,7 @@ export default function DashboardLayout({
               >
                 {/* Desktop nav buttons */}
                 <div className="space-y-2">
-                  <NavButton href="/dashboard/images" label="My Images" />
+                  <NavButton href="/dashboard/files" label="My Files" />
                   {isAdmin && (
                     <NavButton href="/dashboard/groups" label="Groups" />
                   )}
@@ -177,9 +177,7 @@ export default function DashboardLayout({
                   "h-full"
                 )}
               >
-                <div className="p-5">
-                  {children}
-                </div>
+                <div className="p-5">{children}</div>
               </div>
             </div>
           </div>
@@ -192,12 +190,6 @@ export default function DashboardLayout({
 // Reusable button for nav links
 function NavButton({ href, label }: { href: string; label: string }) {
   const pathname = usePathname();
-  // Actually, with next/navigation, you'd do usePathname() or `useSelectedLayoutSegments()`.
-  // For simplicity, let's do:
-  // const pathname = usePathname();
-  // but let's keep it simple
-
-  // We'll do a quick "selected" check:
   const selected = pathname.startsWith(href);
 
   return (
