@@ -1,6 +1,15 @@
 "use client";
 
-import { FormEvent, DragEvent, AwaitedReactNode, JSXElementConstructor, Key, ReactElement, ReactNode, ReactPortal} from "react";
+import {
+  FormEvent,
+  DragEvent,
+  AwaitedReactNode,
+  JSXElementConstructor,
+  Key,
+  ReactElement,
+  ReactNode,
+  ReactPortal,
+} from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useAtom } from "jotai";
@@ -13,10 +22,24 @@ import {
   uploadedItemsAtom,
   UploadedItem,
 } from "@/atoms/uploadAtoms";
+import {
+  filesNeedsRefreshAtom,
+} from "@/atoms/fileAtoms";
 import { cn } from "@/utils/cn";
 
-// A small helper to copy text to clipboard
-async function copyToClipboard(text: string | number | bigint | boolean | React.ReactElement<any, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | Promise<AwaitedReactNode> | null | undefined) {
+
+async function copyToClipboard(
+  text:
+    | string
+    | number
+    | bigint
+    | boolean
+    | React.ReactElement<any, string | React.JSXElementConstructor<any>>
+    | Iterable<React.ReactNode>
+    | Promise<AwaitedReactNode>
+    | null
+    | undefined
+) {
   try {
     if (typeof text === "string") {
       await navigator.clipboard.writeText(text);
@@ -31,22 +54,23 @@ async function copyToClipboard(text: string | number | bigint | boolean | React.
  * Main home page
  */
 export default function Home() {
-  const {data: session} = useSession();
+  const { data: session } = useSession();
 
-  // Jotai states
-  const [selectedFile, setSelectedFile] = useAtom(selectedFileAtom);
-  const [isDragging, setIsDragging] = useAtom(isDraggingAtom);
-  const [uploading, setUploading] = useAtom(uploadingAtom);
+  // Upload‑portal atoms
+  const [selectedFile, setSelectedFile]   = useAtom(selectedFileAtom);
+  const [isDragging, setIsDragging]       = useAtom(isDraggingAtom);
+  const [uploading, setUploading]         = useAtom(uploadingAtom);
   const [uploadProgress, setUploadProgress] = useAtom(uploadProgressAtom);
-  const [uploadError, setUploadError] = useAtom(uploadErrorAtom);
+  const [uploadError, setUploadError]     = useAtom(uploadErrorAtom);
   const [uploadedItems, setUploadedItems] = useAtom(uploadedItemsAtom);
 
-  // DRAG & DROP handlers
+  // tell dashboard to refresh once a file is uploaded
+  const [, setNeedsRefresh] = useAtom(filesNeedsRefreshAtom);
+
+  /* ---------------- Drag & Drop handlers ---------------- */
   function handleDragOver(e: DragEvent<HTMLDivElement>) {
     e.preventDefault();
-    if (!isDragging) {
-      setIsDragging(true);
-    }
+    if (!isDragging) setIsDragging(true);
   }
 
   function handleDragLeave(e: DragEvent<HTMLDivElement>) {
@@ -62,14 +86,14 @@ export default function Home() {
     }
   }
 
-  // FILE INPUT handler
+  /* ---------------- File input handler ---------------- */
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     if (e.target.files?.[0]) {
       setSelectedFile(e.target.files[0]);
     }
   }
 
-  // UPLOAD
+  /* ---------------- Upload ---------------- */
   async function handleUpload(e: FormEvent) {
     e.preventDefault();
     if (!selectedFile) {
@@ -95,9 +119,9 @@ export default function Home() {
       }
 
       // Track progress
-      xhr.upload.addEventListener("progress", (e) => {
-        if (e.lengthComputable) {
-          const percent = Math.round((e.loaded / e.total) * 100);
+      xhr.upload.addEventListener("progress", (ev) => {
+        if (ev.lengthComputable) {
+          const percent = Math.round((ev.loaded / ev.total) * 100);
           setUploadProgress(percent);
         }
       });
@@ -105,7 +129,6 @@ export default function Home() {
       // On load
       xhr.onload = () => {
         setUploading(false);
-        // If not success
         if (xhr.status < 200 || xhr.status >= 300) {
           try {
             const errData = JSON.parse(xhr.responseText);
@@ -115,6 +138,7 @@ export default function Home() {
           }
           return;
         }
+
         // Success
         const data = JSON.parse(xhr.responseText);
         const newItem: UploadedItem = {
@@ -122,9 +146,12 @@ export default function Home() {
           original_filename: data.original_filename,
           direct_link: data.direct_link,
         };
-        setUploadedItems((prev: any) => [newItem, ...prev]); // prepend or append
+        setUploadedItems((prev) => [newItem, ...prev]);
         setSelectedFile(null);
         setUploadProgress(100);
+
+        // ★ Mark the dashboard file list as stale so it refetches
+        setNeedsRefresh(true);
       };
 
       // On error
