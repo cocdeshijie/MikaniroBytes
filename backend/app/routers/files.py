@@ -13,6 +13,7 @@ import os
 import time
 import hashlib
 import secrets
+
 from pydantic import BaseModel
 
 from app.db.database import get_db
@@ -24,6 +25,21 @@ from app.dependencies.auth import get_optional_user, get_current_user
 router = APIRouter()
 
 
+# --------------------------------------------------------------------------- #
+#                               Pydantic models                               #
+# --------------------------------------------------------------------------- #
+class MyFileItem(BaseModel):
+    file_id: int
+    original_filename: Optional[str]
+    direct_link: str
+
+    class Config:
+        orm_mode = True
+
+
+# --------------------------------------------------------------------------- #
+#                              Upload a single file                           #
+# --------------------------------------------------------------------------- #
 @router.post("/upload")
 def upload_file(
     request: Request,
@@ -32,7 +48,8 @@ def upload_file(
     current_user: Optional[User] = Depends(get_optional_user),
 ):
     """
-    Accept a single file upload (guest or authenticated).
+    Accept a single file upload (guest *or* authenticated).
+    If the user is authenticated we store `user_id`; otherwise `NULL`.
     """
     if not file:
         raise HTTPException(status_code=400, detail="No file uploaded")
@@ -74,3 +91,81 @@ def upload_file(
         "download_link": f"{base_url}/files/download/{db_file.id}",
         "original_filename": file.filename,
     }
+
+
+# --------------------------------------------------------------------------- #
+#                        Return *this* user’s files list                      #
+# --------------------------------------------------------------------------- #
+@router.get("/my-files", response_model=List[MyFileItem])
+def list_my_files(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Return a lightweight list of the authenticated user’s files so the
+    dashboard can render them.
+
+    Shape expected by the front‑end (see `MyFileTab.tsx`):
+      [
+        {
+          "file_id": 123,
+          "original_filename": "photo.jpg",
+          "direct_link": "https://…/uploads/abcd1234.jpg"
+        },
+        …
+      ]
+    """
+    rows: List[FileModel] = (
+        db.query(FileModel)
+        .filter(FileModel.user_id == current_user.id)
+        .order_by(FileModel.id.desc())          # latest first
+        .all()
+    )
+
+    base_url = f"{request.url.scheme}://{request.url.netloc}"
+    items: List[MyFileItem] = [
+        MyFileItem(
+            file_id=f.id,
+            original_filename=f.original_filename,
+            direct_link=f"{base_url}/uploads/{f.storage_data.get('path')}",
+        )
+        for f in rows
+    ]
+
+    print("items", items)
+    return items
+
+
+# --------------------------------------------------------------------------- #
+#                          Download / stream a file                           #
+# --------------------------------------------------------------------------- #
+@router.get("/download/{file_id}")
+def download_file(
+    file_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Stream the requested file back to the client.
+    (Currently no auth check – feel free to adjust to your policy.)
+    """
+    db_file = db.query(FileModel).filter(FileModel.id == file_id).first()
+    if not db_file:
+        raise HTTPException(status_code=404, detail="File not found.")
+
+    rel_path: str = db_file.storage_data.get("path", "")
+    abs_path = os.path.join("uploads", rel_path)
+
+    if not os.path.isfile(abs_path):
+        raise HTTPException(status_code=404, detail="File missing on disk.")
+
+    def file_iterator(chunk_size=8192):
+        with open(abs_path, "rb") as fh:
+            while chunk := fh.read(chunk_size):
+                yield chunk
+
+    return StreamingResponse(
+        file_iterator(),
+        media_type=db_file.content_type or "application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{db_file.original_filename or rel_path}"'},
+    )
