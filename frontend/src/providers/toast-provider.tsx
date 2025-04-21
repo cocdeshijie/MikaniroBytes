@@ -30,7 +30,7 @@ interface ToastContextValue {
 }
 
 /* ------------------------------------------------------------------ */
-/*                           GLOBAL ATOMS                             */
+/*                           GLOBAL ATOMS                             */
 /* ------------------------------------------------------------------ */
 const toastsAtom   = atom<ToastItem[]>([]);
 const isMobileAtom = atom(false);

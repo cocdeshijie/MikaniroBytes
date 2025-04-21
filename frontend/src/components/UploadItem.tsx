@@ -22,7 +22,7 @@ import { iconFor } from "@/utils/fileIcons";
 import { formatBytes } from "@/utils/formatBytes";
 
 /* ------------------------------------------------------------------ */
-/*                          MAIN COMPONENT                            */
+/*                          MAIN COMPONENT                            */
 /* ------------------------------------------------------------------ */
 
 export default function UploadItem({ taskId }: { taskId: string }) {
@@ -130,7 +130,7 @@ export default function UploadItem({ taskId }: { taskId: string }) {
 }
 
 /* ------------------------------------------------------------------ */
-/*                       SMALL REUSABLE LINE                          */
+/*                       SMALL REUSABLE LINE                          */
 /* ------------------------------------------------------------------ */
 function LinkLine({
   icon,

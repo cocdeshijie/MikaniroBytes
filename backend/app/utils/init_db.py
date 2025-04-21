@@ -55,8 +55,8 @@ def init_db(db: Session) -> None:
         guest_group = Group(name="GUEST")
         guest_group.settings = GroupSettings(
             allowed_extensions=["jpg", "png", "gif"],
-            max_file_size=5_000_000,       # 5 MB per file
-            max_storage_size=1_000_000_000 # 1 GB total
+            max_file_size=5_000_000,       # 5 MB per file
+            max_storage_size=1_000_000_000 # 1 GB total
         )
         db.add(guest_group)
         db.commit()
@@ -75,7 +75,7 @@ def init_db(db: Session) -> None:
 
     # ------------------------------------------------------------------
     # 4) Make sure **some** normal group exists
-    #     (“normal” = not SUPER_ADMIN and not GUEST)
+    #     (“normal” = not SUPER_ADMIN and not GUEST)
     # ------------------------------------------------------------------
     normal_group = (
         db.query(Group)
@@ -89,8 +89,8 @@ def init_db(db: Session) -> None:
         normal_group = Group(name="USERS")
         normal_group.settings = GroupSettings(
             allowed_extensions=["jpg", "png", "gif"],
-            max_file_size=10_000_000,       # 10 MB
-            max_storage_size=500_000_000,   # 500 MB total
+            max_file_size=10_000_000,       # 10 MB
+            max_storage_size=500_000_000,   # 500 MB total
         )
         db.add(normal_group)
         db.commit()

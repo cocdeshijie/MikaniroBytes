@@ -138,7 +138,7 @@ export default function ViewUsersDialog({
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Trigger asChild>
         <button className="px-3 py-1.5 rounded bg-theme-500 text-white hover:bg-theme-600">
-          View users
+          View users
         </button>
       </Dialog.Trigger>
 
@@ -196,7 +196,7 @@ export default function ViewUsersDialog({
                       </p>
                       <p className="text-sm text-theme-600 dark:text-theme-400">
                         Files:&nbsp;{u.file_count}&nbsp;/&nbsp;
-                        {(u.storage_bytes / 1e6).toFixed(1)} MB
+                        {(u.storage_bytes / 1e6).toFixed(1)} MB
                       </p>
                     </div>
 

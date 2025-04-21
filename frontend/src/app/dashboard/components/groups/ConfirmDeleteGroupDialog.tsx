@@ -76,7 +76,7 @@ export default function ConfirmDeleteGroupDialog({
           </AlertDialog.Title>
 
           <AlertDialog.Description className="text-sm text-theme-600 dark:text-theme-300 mb-4">
-            Deleting a group removes <strong>all its users</strong>. 
+            Deleting a group removes <strong>all its users</strong>. 
             You may also choose to delete every file they have uploaded.
           </AlertDialog.Description>
 

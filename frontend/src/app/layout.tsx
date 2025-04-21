@@ -10,7 +10,7 @@ import { NextAuthProvider } from "@/providers/next-auth-provider";
 import { ToastProvider } from "@/providers/toast-provider";
 
 /* ------------------------------------------------------------------ */
-/*                            LOCAL FONTS                             */
+/*                            LOCAL FONTS                             */
 /* ------------------------------------------------------------------ */
 
 const geistSans = localFont({

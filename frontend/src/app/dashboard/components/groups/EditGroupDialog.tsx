@@ -117,28 +117,28 @@ export default function EditGroupDialog({
             </p>
           )}
 
-          <Field label="Group Name">
+          <Field label="Group Name">
             <input disabled={group.name === "SUPER_ADMIN"}
                    value={name} onChange={(e)=>setName(e.target.value)}
                    className="w-full px-3 py-2 rounded border border-theme-200 dark:border-theme-700
                               bg-theme-50 dark:bg-theme-800" />
           </Field>
 
-          <Field label="Allowed Extensions">
+          <Field label="Allowed Extensions">
             <input value={allow} onChange={(e)=>setAllow(e.target.value)}
                    placeholder="blank = any"
                    className="w-full px-3 py-2 rounded border border-theme-200 dark:border-theme-700
                               bg-theme-50 dark:bg-theme-800" />
           </Field>
 
-          <Field label="Max File Size">
+          <Field label="Max File Size">
             <input value={maxF} onChange={(e)=>setMaxF(e.target.value)}
                    placeholder="blank = unlimited"
                    className="w-full px-3 py-2 rounded border border-theme-200 dark:border-theme-700
                               bg-theme-50 dark:bg-theme-800" />
           </Field>
 
-          <Field label="Max Total Storage">
+          <Field label="Max Total Storage">
             <input value={maxS} onChange={(e)=>setMaxS(e.target.value)}
                    placeholder="blank = unlimited"
                    className="w-full px-3 py-2 rounded border border-theme-200 dark:border-theme-700

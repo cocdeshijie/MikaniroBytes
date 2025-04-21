@@ -156,7 +156,7 @@ export default function Home() {
             <div className="h-1 w-16 bg-theme-500 rounded-full inline-block ml-2" />
           </h1>
           <p className="max-w-2xl text-center text-theme-700 dark:text-theme-300 text-lg mb-8">
-            Host and manage your files with the power of FastAPI + Next.js.
+            Host and manage your files with the power of FastAPI + Next.js.
           </p>
         </div>
 

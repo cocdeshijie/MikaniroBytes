@@ -1,7 +1,7 @@
 /**
  * Types shared across several admin components.
  * “aggregate” fields (file_count / storage_bytes) are included so we
- * never hit the TS variance error again.
+ * never hit the TS variance error again.
  */
 export interface GroupItem {
   id: number;
