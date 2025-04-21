@@ -3,15 +3,8 @@
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { useState } from "react";
 import { cn } from "@/utils/cn";
-import { useToast } from "@/providers/toast-provider"; // ★ NEW
-
-interface GroupItem {
-  id: number;
-  name: string;
-  allowed_extensions: string[];
-  max_file_size: number;
-  max_storage_size: number | null;
-}
+import { useToast } from "@/providers/toast-provider";
+import type { GroupItem } from "@/types/sharedTypes";   // ★ unified type
 
 export default function ConfirmDeleteGroupDialog({
   group,
@@ -20,31 +13,38 @@ export default function ConfirmDeleteGroupDialog({
 }: {
   group: GroupItem;
   sessionToken: string;
-  onDeleted: (groupId: number, deleteFiles: boolean) => void;
+  onDeleted: (groupId: number) => void;                 // ★ simpler contract
 }) {
-  const { push } = useToast(); // ★ NEW
-  const [open, setOpen] = useState(false);
-  const [deleteFiles, setDeleteFiles] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const { push } = useToast();
+
+  const [open, setOpen]         = useState(false);
+  const [deleteFiles, setFiles] = useState(false);
+  const [loading, setLoading]   = useState(false);
 
   async function handleConfirm() {
     setLoading(true);
     try {
-      const url = `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/groups/${group.id}?delete_files=${deleteFiles}`;
+      const url =
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/groups/${group.id}` +
+        `?delete_files=${deleteFiles}`;
       const res = await fetch(url, {
-        method: "DELETE",
+        method : "DELETE",
         headers: { Authorization: `Bearer ${sessionToken}` },
       });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.detail || "Failed to delete group");
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.detail ?? "Failed to delete group");
       }
-      onDeleted(group.id, deleteFiles);
+
+      onDeleted(group.id);                              // ★ deleteFiles no longer forwarded
       setOpen(false);
-      push({ title: "Group deleted", description: group.name, variant: "success" }); // ★
-    } catch (err: any) {
-      alert(err.message || "Error deleting group");
-      push({ title: "Delete failed", variant: "error" }); // ★
+      push({
+        title      : "Group deleted",
+        description: group.name,
+        variant    : "success",
+      });
+    } catch (e: any) {
+      push({ title: e.message ?? "Delete failed", variant: "error" });
     } finally {
       setLoading(false);
     }
@@ -56,7 +56,7 @@ export default function ConfirmDeleteGroupDialog({
         <button
           className={cn(
             "px-3 py-1.5 rounded text-white bg-red-600 hover:bg-red-700",
-            "transition"
+            "transition-colors",
           )}
         >
           Delete
@@ -64,47 +64,40 @@ export default function ConfirmDeleteGroupDialog({
       </AlertDialog.Trigger>
 
       <AlertDialog.Portal>
-        <AlertDialog.Overlay
-          className={cn("bg-black/30 backdrop-blur-sm fixed inset-0 z-50")}
-        />
+        <AlertDialog.Overlay className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50" />
         <AlertDialog.Content
           className={cn(
             "fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2",
-            "bg-theme-50 dark:bg-theme-900",
-            "rounded-lg shadow-lg max-w-sm w-full p-6"
+            "bg-theme-50 dark:bg-theme-900 rounded-lg shadow-lg max-w-sm w-full p-6",
           )}
         >
           <AlertDialog.Title className="text-lg font-medium text-red-600 dark:text-red-400 mb-2">
-            Delete Group "{group.name}"?
+            Delete “{group.name}”?
           </AlertDialog.Title>
+
           <AlertDialog.Description className="text-sm text-theme-600 dark:text-theme-300 mb-4">
-            Deleting a group also deletes all users in that group. Optionally,
-            you can also remove all their files.
+            Deleting a group removes <strong>all its users</strong>. 
+            You may also choose to delete every file they have uploaded.
           </AlertDialog.Description>
 
-          <div className="mb-4 flex items-center space-x-2">
+          <label className="flex items-center gap-2 mb-4 text-sm">
             <input
               type="checkbox"
-              id="delete_files"
               checked={deleteFiles}
-              onChange={(e) => setDeleteFiles(e.target.checked)}
+              onChange={(e) => setFiles(e.target.checked)}
               className="cursor-pointer"
             />
-            <label
-              htmlFor="delete_files"
-              className="text-sm text-theme-700 dark:text-theme-200 cursor-pointer"
-            >
-              Also delete all user files?
-            </label>
-          </div>
+            <span className="text-theme-700 dark:text-theme-200">
+              Also delete all user files
+            </span>
+          </label>
 
-          <div className="flex justify-end space-x-2">
+          <div className="flex justify-end gap-2">
             <AlertDialog.Cancel asChild>
               <button
                 className={cn(
                   "px-4 py-2 rounded border",
-                  "border-theme-300 dark:border-theme-700 text-theme-700 dark:text-theme-200",
-                  "bg-theme-200/50 dark:bg-theme-800/50 hover:bg-theme-200 dark:hover:bg-theme-800"
+                  "border-theme-300 dark:border-theme-700",
                 )}
               >
                 Cancel
@@ -116,10 +109,10 @@ export default function ConfirmDeleteGroupDialog({
                 onClick={handleConfirm}
                 className={cn(
                   "px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700",
-                  "disabled:bg-red-300"
+                  "disabled:bg-red-300",
                 )}
               >
-                {loading ? "Deleting..." : "Yes, delete"}
+                {loading ? "Deleting…" : "Yes, delete"}
               </button>
             </AlertDialog.Action>
           </div>

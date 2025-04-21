@@ -10,28 +10,16 @@ import AddGroupDialog from "./AddGroupDialog";
 import EditGroupDialog from "./EditGroupDialog";
 import ConfirmDeleteGroupDialog from "./ConfirmDeleteGroupDialog";
 import ViewUsersDialog from "./ViewUsersDialog";
-
-/* ---------- types ---------- */
-interface GroupRow {
-  id: number;
-  name: string;
-  allowed_extensions: string[];
-  max_file_size: number;
-  max_storage_size: number | null;
-  file_count: number;
-  storage_bytes: number;
-}
-export type GroupBasic = Omit<GroupRow, "file_count" | "storage_bytes">;
+import type { GroupItem } from "@/types/sharedTypes";
 
 /* ---------- atoms ---------- */
-const groupsAtom     = atom<GroupRow[]>([]);
-const fetchedAtom    = atom(false);
-const loadingAtom    = atom(false);
-const errorAtom      = atom("");
+const groupsAtom  = atom<GroupItem[]>([]);
+const fetchedAtom = atom(false);
+const loadingAtom = atom(false);
+const errorAtom   = atom("");
 
-/* ---------- component ---------- */
 export default function GroupsTab() {
-  const { data: session } = useSession();
+  const { data: session }     = useSession();
   const [groups, setGroups]   = useAtom(groupsAtom);
   const [fetched, setFetched] = useAtom(fetchedAtom);
   const [loading, setLoad]    = useAtom(loadingAtom);
@@ -59,17 +47,16 @@ export default function GroupsTab() {
     } finally { setLoad(false); }
   }
 
-  /* -------- helpers to mutate list without refetch -------- */
-  const add  = (g: GroupBasic) =>
-    setGroups((p) => [...p, { ...g, file_count: 0, storage_bytes: 0 }]);
-  const upd  = (g: GroupBasic) =>
-    setGroups((p) => p.map((r) => (r.id === g.id ? { ...r, ...g } : r)));
-  const del  = (id: number)   =>
+  /* -------- local mutators (no refetch needed) -------- */
+  const add = (g: GroupItem) => setGroups((p) => [...p, g]);
+  const upd = (g: GroupItem) =>
+    setGroups((p) => p.map((r) => (r.id === g.id ? g : r)));
+  const del = (id: number)   =>
     setGroups((p) => p.filter((g) => g.id !== id));
 
   /* -------- derived -------- */
-  const normal = groups.filter((g) => g.name !== "SUPER_ADMIN");
-  const lockDelete = normal.length <= 1;
+  const normal      = groups.filter((g) => g.name !== "SUPER_ADMIN");
+  const lockDelete  = normal.length <= 1;
 
   /* -------- UI -------- */
   return (
@@ -80,6 +67,7 @@ export default function GroupsTab() {
       )}>
         Groups Management
       </h3>
+
       {error && (
         <p className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded mb-4">
           {error}
@@ -106,8 +94,8 @@ export default function GroupsTab() {
           ) : (
             <ul className="space-y-3">
               {groups.map((g) => {
-                const isSuper = g.name === "SUPER_ADMIN";
-                const prevent = !isSuper && lockDelete;
+                const isSuper   = g.name === "SUPER_ADMIN";
+                const prevent   = !isSuper && lockDelete;
 
                 return (
                   <li key={g.id} className={cn(
@@ -120,7 +108,6 @@ export default function GroupsTab() {
                         <ViewUsersDialog
                           group={g}
                           sessionToken={session?.accessToken || ""}
-                          /** refresh counts when users move / delete */
                           onChanged={fetchGroups}
                         />
                         <EditGroupDialog
@@ -150,14 +137,16 @@ export default function GroupsTab() {
 
                     <p className="text-sm text-theme-600 dark:text-theme-400">
                       Max file:&nbsp;
-                      <ByteValueTooltip bytes={g.max_file_size} />&nbsp;|&nbsp;
-                      Max storage:&nbsp;
+                      {g.max_file_size === null
+                        ? "Unlimited"
+                        : <ByteValueTooltip bytes={g.max_file_size} />}
+                      &nbsp;|&nbsp;Max storage:&nbsp;
                       {g.max_storage_size === null
                         ? "Unlimited"
                         : <ByteValueTooltip bytes={g.max_storage_size} />}
                     </p>
                     <p className="text-sm text-theme-600 dark:text-theme-400 mt-0.5">
-                      Stored:&nbsp;{g.file_count} files –&nbsp;
+                      Stored:&nbsp;{g.file_count} files –&nbsp;
                       <ByteValueTooltip bytes={g.storage_bytes} />
                     </p>
                   </li>
