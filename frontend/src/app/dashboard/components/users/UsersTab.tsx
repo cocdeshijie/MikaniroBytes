@@ -14,7 +14,8 @@ import {
 } from "react-icons/bi";
 import { cn } from "@/utils/cn";
 import { ByteValueTooltip } from "../groups/ByteValueTooltip";
-import { useToast } from "@/providers/toast-provider"; // ★ NEW
+import { useToast } from "@/providers/toast-provider";
+import ViewUserFilesDialog from "./ViewUserFilesDialog";
 
 /* ---------- Types shared with backend ---------- */
 interface GroupItem {
@@ -230,6 +231,13 @@ export default function UsersTab() {
 
                 {/* RIGHT controls */}
                 <div className="flex items-center gap-3">
+                  {!isSuperAdmin(u) && (
+                    <ViewUserFilesDialog
+                      userId={u.id}
+                      username={u.username}
+                      sessionToken={session?.accessToken || ""}
+                    />
+                  )}
                   {/* Group select */}
                   {isSuperAdmin(u) ? (
                     <span className="text-theme-700 dark:text-theme-300 text-sm">

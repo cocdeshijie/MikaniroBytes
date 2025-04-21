@@ -15,6 +15,7 @@ import { FiX } from "react-icons/fi";
 import { cn } from "@/utils/cn";
 import { ByteValueTooltip } from "./ByteValueTooltip";
 import { useToast } from "@/providers/toast-provider";
+import ViewUserFilesDialog from "../users/ViewUserFilesDialog";     // ★ NEW ★
 
 /* ---------- types ---------- */
 interface GroupInfo {
@@ -35,7 +36,7 @@ interface UserItem {
 export default function ViewUsersDialog({
   group,
   sessionToken,
-  onChanged,          /* callback to parent to refresh stats */
+  onChanged,
 }: {
   group: GroupInfo;
   sessionToken: string;
@@ -43,7 +44,7 @@ export default function ViewUsersDialog({
 }) {
   const { push } = useToast();
 
-  /* local atoms */
+  /* ---------------- local atoms ---------------- */
   const openA    = useMemo(() => atom(false), []);
   const loadingA = useMemo(() => atom(false), []);
   const errorA   = useMemo(() => atom(""), []);
@@ -56,12 +57,13 @@ export default function ViewUsersDialog({
   const [users, setUsers]   = useAtom(usersA);
   const [groups, setGroups] = useAtom(groupsA);
 
-  /* fetch each time dialog opens */
+  /* ------------ fetch each open ------------ */
   useEffect(() => { if (open) fetchAll(); }, [open]);
 
   async function fetchAll() {
     setLoad(true); setError("");
     try {
+      /* users */
       const uRes = await fetch(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/users`,
         { headers: { Authorization: `Bearer ${sessionToken}` } },
@@ -70,6 +72,7 @@ export default function ViewUsersDialog({
       const all: UserItem[] = await uRes.json();
       setUsers(all.filter((u) => u.group?.id === group.id));
 
+      /* groups (for move‑to select) */
       const gRes = await fetch(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/groups`,
         { headers: { Authorization: `Bearer ${sessionToken}` } },
@@ -86,7 +89,7 @@ export default function ViewUsersDialog({
     } finally { setLoad(false); }
   }
 
-  /* helpers */
+  /* ------------ helpers ------------ */
   const isSuper = (u: UserItem) => u.group?.name === "SUPER_ADMIN";
 
   async function moveUser(userId: number, newGroupId: number) {
@@ -96,10 +99,10 @@ export default function ViewUsersDialog({
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/users/${userId}/group`,
         {
-          method: "PUT",
+          method : "PUT",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${sessionToken}`,
+            Authorization : `Bearer ${sessionToken}`,
           },
           body: JSON.stringify({ group_id: newGroupId }),
         },
@@ -108,10 +111,9 @@ export default function ViewUsersDialog({
         const d = await res.json().catch(() => ({}));
         throw new Error(d.detail || "Update failed");
       }
-      /* remove from current list */
       setUsers((p) => p.filter((u) => u.id !== userId));
       push({ title: "User moved", variant: "success" });
-      onChanged();                         /* refresh parent counts */
+      onChanged();               // update group stats in parent
     } catch (e: any) {
       setError(e.message || "Move error");
       push({ title: "Move failed", variant: "error" });
@@ -126,7 +128,7 @@ export default function ViewUsersDialog({
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/users/${userId}` +
         `?delete_files=${deleteFiles}`;
       const res = await fetch(url, {
-        method: "DELETE",
+        method : "DELETE",
         headers: { Authorization: `Bearer ${sessionToken}` },
       });
       if (!res.ok) {
@@ -135,29 +137,31 @@ export default function ViewUsersDialog({
       }
       setUsers((p) => p.filter((u) => u.id !== userId));
       push({ title: "User deleted", variant: "success" });
-      onChanged();                         /* refresh parent counts */
+      onChanged();
     } catch (e: any) {
       setError(e.message || "Delete error");
       push({ title: "Delete failed", variant: "error" });
     } finally { setLoad(false); }
   }
 
-  /* UI */
+  /* ---------------- UI ---------------- */
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Trigger asChild>
         <button className="px-3 py-1.5 rounded bg-theme-500 text-white hover:bg-theme-600">
-          View&nbsp;users
+          View users
         </button>
       </Dialog.Trigger>
 
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50" />
-        <Dialog.Content className={cn(
-          "fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2",
-          "bg-theme-50 dark:bg-theme-900 rounded-xl shadow-xl",
-          "w-[92vw] max-w-3xl max-h-[85vh] overflow-y-auto p-6",
-        )}>
+        <Dialog.Content
+          className={cn(
+            "fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2",
+            "bg-theme-50 dark:bg-theme-900 rounded-xl shadow-xl",
+            "w-[92vw] max-w-3xl max-h-[85vh] overflow-y-auto p-6",
+          )}
+        >
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-medium">
               Users in “{group.name}”
@@ -183,11 +187,14 @@ export default function ViewUsersDialog({
             <Tooltip.Provider delayDuration={100}>
               <ul className="space-y-3">
                 {users.map((u) => (
-                  <li key={u.id} className={cn(
-                    "p-4 rounded-lg border bg-theme-50/20 dark:bg-theme-900/20",
-                    "border-theme-200/50 dark:border-theme-800/50",
-                    "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4",
-                  )}>
+                  <li
+                    key={u.id}
+                    className={cn(
+                      "p-4 rounded-lg border bg-theme-50/20 dark:bg-theme-900/20",
+                      "border-theme-200/50 dark:border-theme-800/50",
+                      "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4",
+                    )}
+                  >
                     <div className="space-y-1 flex-1">
                       <p className="font-medium">
                         {u.username}
@@ -208,34 +215,52 @@ export default function ViewUsersDialog({
 
                     {!isSuper(u) && (
                       <div className="flex items-center gap-3">
-                        {/* select new group */}
+                        {/* ★ NEW – open file viewer for this user */}
+                        <ViewUserFilesDialog
+                          userId={u.id}
+                          username={u.username}
+                          sessionToken={sessionToken}
+                        />
+
+                        {/* move user to another group */}
                         <Select.Root
                           value={(u.group?.id ?? "").toString()}
                           onValueChange={(v) => moveUser(u.id, +v)}
                         >
-                          <Select.Trigger className={cn(
-                            "inline-flex items-center justify-between min-w-[7rem] px-3 py-1.5 rounded border",
-                            "border-theme-200 dark:border-theme-700 bg-theme-50 dark:bg-theme-800 text-sm",
-                          )}>
+                          <Select.Trigger
+                            className={cn(
+                              "inline-flex items-center justify-between min-w-[7rem] px-3 py-1.5 rounded border",
+                              "border-theme-200 dark:border-theme-700 bg-theme-50 dark:bg-theme-800 text-sm",
+                            )}
+                          >
                             <Select.Value />
                             <Select.Icon>
                               <BiChevronDown className="h-4 w-4" />
                             </Select.Icon>
                           </Select.Trigger>
+
                           <Select.Portal>
-                            <Select.Content side="bottom" className={cn(
-                              "overflow-hidden rounded-lg shadow-lg z-[60]",
-                              "bg-theme-50 dark:bg-theme-900 border border-theme-200 dark:border-theme-700",
-                            )}>
+                            <Select.Content
+                              side="bottom"
+                              className={cn(
+                                "overflow-hidden rounded-lg shadow-lg z-[60]",
+                                "bg-theme-50 dark:bg-theme-900 border border-theme-200 dark:border-theme-700",
+                              )}
+                            >
                               <Select.ScrollUpButton className="flex items-center justify-center py-1">
                                 <BiChevronUp />
                               </Select.ScrollUpButton>
+
                               <Select.Viewport className="max-h-60">
                                 {groups.map((g) => (
-                                  <Select.Item key={g.id} value={g.id.toString()} className={cn(
-                                    "flex items-center px-3 py-2 text-sm cursor-pointer",
-                                    "radix-state-checked:bg-theme-200 dark:radix-state-checked:bg-theme-700",
-                                  )}>
+                                  <Select.Item
+                                    key={g.id}
+                                    value={g.id.toString()}
+                                    className={cn(
+                                      "flex items-center px-3 py-2 text-sm cursor-pointer",
+                                      "radix-state-checked:bg-theme-200 dark:radix-state-checked:bg-theme-700",
+                                    )}
+                                  >
                                     <Select.ItemText>{g.name}</Select.ItemText>
                                     <Select.ItemIndicator className="ml-auto">
                                       <BiCheck />
@@ -243,6 +268,7 @@ export default function ViewUsersDialog({
                                   </Select.Item>
                                 ))}
                               </Select.Viewport>
+
                               <Select.ScrollDownButton className="flex items-center justify-center py-1">
                                 <BiChevronDown />
                               </Select.ScrollDownButton>
@@ -250,7 +276,7 @@ export default function ViewUsersDialog({
                           </Select.Portal>
                         </Select.Root>
 
-                        {/* delete */}
+                        {/* delete user */}
                         <Tooltip.Root>
                           <Tooltip.Trigger asChild>
                             <button
@@ -261,7 +287,11 @@ export default function ViewUsersDialog({
                             </button>
                           </Tooltip.Trigger>
                           <Tooltip.Portal>
-                            <Tooltip.Content side="top" sideOffset={4} className="bg-theme-900 text-white px-2 py-1 rounded text-xs">
+                            <Tooltip.Content
+                              side="top"
+                              sideOffset={4}
+                              className="bg-theme-900 text-white px-2 py-1 rounded text-xs"
+                            >
                               Delete user
                             </Tooltip.Content>
                           </Tooltip.Portal>
