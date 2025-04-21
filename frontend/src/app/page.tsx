@@ -1,43 +1,26 @@
 "use client";
 
 import {
-  FormEvent,
-  DragEvent,
-  AwaitedReactNode,
-  JSXElementConstructor,
-  Key,
-  ReactElement,
-  ReactNode,
-  ReactPortal,
-} from "react";
-import Link from "next/link";
-import { useSession } from "next-auth/react";
-import { useAtom } from "jotai";
-import {
-  selectedFileAtom,
   isDraggingAtom,
-  uploadingAtom,
-  uploadProgressAtom,
-  uploadErrorAtom,
+  uploadTasksAtom,
   uploadedItemsAtom,
-  UploadedItem,
+  UploadTask,
 } from "@/atoms/uploadAtoms";
 import { filesNeedsRefreshAtom } from "@/atoms/fileAtoms";
 import { cn } from "@/utils/cn";
 import { useToast } from "@/providers/toast-provider";
+import { useSession } from "next-auth/react";
+import { FormEvent, DragEvent, useRef } from "react";
+import { atom, useAtom } from "jotai";
+import UploadItem from "@/components/UploadItem";
 
 /* ------------------------------------------------------------------ */
-/*                      helper: copy‑to‑clipboard                      */
+/*                       local derived atoms                          */
 /* ------------------------------------------------------------------ */
 
-async function copyToClipboard(text: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    return false;
-  }
-}
+const pendingCountAtom = atom((get) =>
+  get(uploadTasksAtom).filter((t) => t.status === "pending").length
+);
 
 /* ------------------------------------------------------------------ */
 /*                             COMPONENT                              */
@@ -45,141 +28,118 @@ async function copyToClipboard(text: string) {
 
 export default function Home() {
   const { data: session } = useSession();
-  const { push } = useToast(); // ★ NEW
+  const { push } = useToast();
 
-  // Upload‑portal atoms
-  const [selectedFile, setSelectedFile] = useAtom(selectedFileAtom);
   const [isDragging, setIsDragging] = useAtom(isDraggingAtom);
-  const [uploading, setUploading] = useAtom(uploadingAtom);
-  const [uploadProgress, setUploadProgress] = useAtom(uploadProgressAtom);
-  const [uploadError, setUploadError] = useAtom(uploadErrorAtom);
-  const [uploadedItems, setUploadedItems] = useAtom(uploadedItemsAtom);
-
-  // tell dashboard to refresh once a file is uploaded
+  const [tasks, setTasks] = useAtom(uploadTasksAtom);
+  const [, setUploadedItems] = useAtom(uploadedItemsAtom);
   const [, setNeedsRefresh] = useAtom(filesNeedsRefreshAtom);
+  const pendingCount = useAtom(pendingCountAtom)[0];
 
-  /* ---------------- Drag & Drop handlers ---------------- */
-  function handleDragOver(e: DragEvent<HTMLDivElement>) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  /* ---------------- Drag & Drop ------------------- */
+  const onDragOver = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     if (!isDragging) setIsDragging(true);
-  }
-
-  function handleDragLeave(e: DragEvent<HTMLDivElement>) {
+  };
+  const onDragLeave = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
-  }
-
-  function handleDrop(e: DragEvent<HTMLDivElement>) {
+  };
+  const onDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      setSelectedFile(e.dataTransfer.files[0]);
-    }
-  }
+    appendFiles(e.dataTransfer.files);
+  };
 
-  /* ---------------- File input handler ---------------- */
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    if (e.target.files?.[0]) {
-      setSelectedFile(e.target.files[0]);
-    }
-  }
+  /* ---------------- select (click) ---------------- */
+  const appendFiles = (fileList: FileList | null) => {
+    if (!fileList) return;
+    const newTasks: UploadTask[] = Array.from(fileList).map((f) => ({
+      id: crypto.randomUUID(),
+      file: f,
+      progress: 0,
+      status: "pending",
+    }));
+    setTasks((prev) => [...prev, ...newTasks]);
+  };
 
-  /* ---------------- Upload ---------------- */
-  async function handleUpload(e: FormEvent) {
+  /* ---------------- upload ---------------- */
+  const handleUpload = async (e: FormEvent) => {
     e.preventDefault();
-    if (!selectedFile) {
-      setUploadError("No file selected");
-      return;
+    const toStart = tasks.filter((t) => t.status === "pending");
+    toStart.forEach(startUpload);
+  };
+
+  const startUpload = (task: UploadTask) => {
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === task.id ? { ...t, status: "uploading", progress: 0 } : t
+      )
+    );
+
+    const xhr = new XMLHttpRequest();
+    xhr.open(
+      "POST",
+      `${process.env.NEXT_PUBLIC_BACKEND_URL}/files/upload`
+    );
+
+    if (session?.accessToken) {
+      xhr.setRequestHeader("Authorization", `Bearer ${session.accessToken}`);
     }
 
-    // Reset
-    setUploadError("");
-    setUploading(true);
-    setUploadProgress(0);
-
-    try {
-      const formData = new FormData();
-      formData.append("file", selectedFile);
-
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", `${process.env.NEXT_PUBLIC_BACKEND_URL}/files/upload`);
-
-      // If user is logged in, attach Bearer token
-      if (session?.accessToken) {
-        xhr.setRequestHeader("Authorization", `Bearer ${session.accessToken}`);
+    xhr.upload.addEventListener("progress", (ev) => {
+      if (ev.lengthComputable) {
+        const pct = Math.round((ev.loaded / ev.total) * 100);
+        setTasks((prev) =>
+          prev.map((t) => (t.id === task.id ? { ...t, progress: pct } : t))
+        );
       }
+    });
 
-      // Track progress
-      xhr.upload.addEventListener("progress", (ev) => {
-        if (ev.lengthComputable) {
-          const percent = Math.round((ev.loaded / ev.total) * 100);
-          setUploadProgress(percent);
-        }
-      });
-
-      // On load
-      xhr.onload = () => {
-        setUploading(false);
-        if (xhr.status < 200 || xhr.status >= 300) {
-          try {
-            const errData = JSON.parse(xhr.responseText);
-            setUploadError(errData.detail || "Upload failed");
-            push({
-              title: "Upload failed",
-              description: errData.detail || undefined,
-              variant: "error",
-            });
-          } catch {
-            setUploadError("Upload failed");
-            push({ title: "Upload failed", variant: "error" });
-          }
-          return;
-        }
-
-        // Success
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
         const data = JSON.parse(xhr.responseText);
-        const newItem: UploadedItem = {
+        const result = {
           file_id: data.file_id,
           original_filename: data.original_filename,
           direct_link: data.direct_link,
         };
-        setUploadedItems((prev) => [newItem, ...prev]);
-        setSelectedFile(null);
-        setUploadProgress(100);
-
-        // ★ Mark the dashboard file list as stale so it refetches
+        setTasks((prev) =>
+          prev.map((t) =>
+            t.id === task.id
+              ? { ...t, status: "done", progress: 100, result }
+              : t
+          )
+        );
+        setUploadedItems((prev) => [result, ...prev]);
         setNeedsRefresh(true);
+      } else {
+        fail(xhr.responseText || "Upload failed");
+      }
+    };
 
-        push({
-          title: "Upload complete",
-          description: data.original_filename,
-          variant: "success",
-        });
-      };
+    xhr.onerror = () => fail("Network error");
 
-      // On error
-      xhr.onerror = () => {
-        setUploading(false);
-        setUploadError("Network or server error.");
-        push({ title: "Upload error", variant: "error" });
-      };
+    const fail = (msg: string) => {
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === task.id ? { ...t, status: "error", error: msg } : t
+        )
+      );
+      push({ title: "Upload error", variant: "error" });
+    };
 
-      // Send form
-      xhr.send(formData);
-    } catch (err: any) {
-      setUploading(false);
-      setUploadError(err.message || "Error uploading file");
-      push({
-        title: "Upload error",
-        description: err?.message,
-        variant: "error",
-      });
-    }
-  }
+    const formData = new FormData();
+    formData.append("file", task.file);
+    xhr.send(formData);
+  };
 
   /* ------------------------------------------------------------------ */
   /*                               JSX                                  */
   /* ------------------------------------------------------------------ */
+
   return (
     <div className="relative min-h-screen bg-theme-50 dark:bg-theme-950">
       {/* Hero section */}
@@ -193,15 +153,16 @@ export default function Home() {
             )}
           >
             Welcome to FileBed
-            <div className="h-1 w-16 bg-theme-500 rounded-full inline-block ml-2"></div>
+            <div className="h-1 w-16 bg-theme-500 rounded-full inline-block ml-2" />
           </h1>
           <p className="max-w-2xl text-center text-theme-700 dark:text-theme-300 text-lg mb-8">
-            Host and manage your files with the power of FastAPI + Next.js.
+            Host and manage your files with the power of FastAPI + Next.js.
           </p>
         </div>
 
-        {/* Upload portal area */}
+        {/* Upload portal */}
         <div className="w-full max-w-3xl mx-auto mb-16">
+          {/* ------------ SELECT + DRAG AREA ------------- */}
           <form
             onSubmit={handleUpload}
             className={cn(
@@ -212,31 +173,18 @@ export default function Home() {
           >
             <div
               className={cn(
-                "border-b border-theme-100 dark:border-theme-800 px-6 py-4",
-                "flex items-center justify-between"
-              )}
-            >
-              <h2 className="text-lg font-medium text-theme-900 dark:text-theme-100">
-                Upload File
-              </h2>
-              <div className="h-1 w-8 bg-theme-500 rounded-full"></div>
-            </div>
-
-            <div
-              className={cn(
-                "p-8 cursor-pointer",
-                "flex flex-col items-center justify-center",
-                "border-2 border-dashed border-theme-200 dark:border-theme-700",
-                "rounded-lg text-center",
+                "p-8 cursor-pointer flex flex-col items-center justify-center",
+                "border-2 border-dashed border-theme-200 dark:border-theme-700 rounded-lg text-center",
                 "bg-theme-50/50 dark:bg-theme-800/30",
                 isDragging
                   ? "bg-theme-100/70 dark:bg-theme-800/70"
                   : "hover:bg-theme-100/50 dark:hover:bg-theme-800/50",
                 "transition-colors duration-200"
               )}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={onDragOver}
+              onDragLeave={onDragLeave}
+              onDrop={onDrop}
             >
               <svg
                 className="w-16 h-16 text-theme-400 dark:text-theme-600 mb-2"
@@ -253,174 +201,49 @@ export default function Home() {
                 />
               </svg>
               <p className="text-theme-700 dark:text-theme-300 text-lg font-medium mb-1">
-                Drag & drop a file here
+                Drag & drop files here
               </p>
               <p className="text-theme-500 dark:text-theme-400 text-sm">
                 or click to browse
               </p>
-
-              {/* Hidden file input to handle "click to browse" */}
               <input
+                ref={fileInputRef}
                 type="file"
+                multiple
                 className="hidden"
-                onChange={handleFileChange}
+                onChange={(e) => appendFiles(e.target.files)}
               />
             </div>
 
-            {selectedFile && (
-              <div className="px-6 py-4">
-                <p className="text-sm text-theme-600 dark:text-theme-400">
-                  Selected File:
-                </p>
-                <p className="text-theme-800 dark:text-theme-100 font-medium">
-                  {selectedFile.name}
-                </p>
-              </div>
-            )}
-
-            {uploadError && (
-              <div
-                className={cn(
-                  "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400",
-                  "p-4 mb-2 mx-6 rounded-lg",
-                  "border border-red-100 dark:border-red-800/50"
-                )}
-              >
-                {uploadError}
-              </div>
-            )}
-
-            {/* Progress bar */}
-            {uploading && (
-              <div className="px-6 mb-4">
-                <div className="relative h-2 bg-theme-200 dark:bg-theme-700 rounded-full overflow-hidden">
-                  <div
-                    className="absolute top-0 left-0 h-2 bg-theme-500 transition-all duration-200"
-                    style={{ width: `${uploadProgress}%` }}
-                  ></div>
-                </div>
-                <p className="mt-1 text-sm text-theme-600 dark:text-theme-400">
-                  Uploading... {uploadProgress}%
-                </p>
-              </div>
-            )}
-
+            {/* ------------ ACTION BUTTON ------------- */}
             <div className="p-6">
               <button
                 type="submit"
-                disabled={!selectedFile || uploading}
+                disabled={pendingCount === 0}
                 className={cn(
-                  "py-3 px-6 rounded-lg",
-                  uploading
-                    ? "bg-theme-300 dark:bg-theme-700 text-white cursor-not-allowed"
-                    : "bg-theme-500 hover:bg-theme-600 text-white",
-                  "font-medium transition-all duration-200 flex items-center justify-center gap-2"
+                  "py-3 px-6 rounded-lg w-full",
+                  pendingCount === 0
+                    ? "bg-theme-300 dark:bg-theme-700 cursor-not-allowed"
+                    : "bg-theme-500 hover:bg-theme-600",
+                  "text-white font-medium transition-all duration-200"
                 )}
               >
-                <span>{uploading ? "Uploading..." : "Upload"}</span>
-                <div className="w-1 h-4 bg-white/50 rounded-full"></div>
+                {pendingCount === 0
+                  ? "Select files first"
+                  : `Upload ${pendingCount} file${pendingCount > 1 ? "s" : ""}`}
               </button>
             </div>
           </form>
 
-          {/* Once uploaded, show the list of items (stacked) */}
-          {uploadedItems.length > 0 && (
+          {/* ------------ TASK LIST ------------- */}
+          {tasks.length > 0 && (
             <div className="mt-6 space-y-4">
-              {uploadedItems.map(
-                (item: {
-                  file_id: Key | null | undefined;
-                  direct_link:
-                    | string
-                    | number
-                    | bigint
-                    | boolean
-                    | ReactElement<
-                        any,
-                        string | JSXElementConstructor<any>
-                      >
-                    | Iterable<React.ReactNode>
-                    | Promise<AwaitedReactNode>
-                    | null
-                    | undefined;
-                  original_filename:
-                    | string
-                    | number
-                    | bigint
-                    | boolean
-                    | ReactElement<
-                        any,
-                        string | JSXElementConstructor<any>
-                      >
-                    | Iterable<React.ReactNode>
-                    | ReactPortal
-                    | Promise<AwaitedReactNode>
-                    | null
-                    | undefined;
-                }) => (
-                  <div
-                    key={item.file_id}
-                    onClick={async () => {
-                      const ok = await copyToClipboard(
-                        item.direct_link as string
-                      );
-                      push({
-                        title: ok ? "URL copied" : "Copy failed",
-                        description: ok
-                          ? undefined
-                          : "Could not write to clipboard",
-                        variant: ok ? "success" : "error",
-                      });
-                    }}
-                    className={cn(
-                      "p-4 bg-theme-50 dark:bg-theme-900 rounded-lg border",
-                      "border-theme-200 dark:border-theme-700 hover:bg-theme-100/50 dark:hover:bg-theme-800/50",
-                      "transition-colors duration-200 cursor-pointer"
-                    )}
-                  >
-                    <p className="font-medium text-theme-700 dark:text-theme-300 mb-1">
-                      {item.original_filename}
-                    </p>
-                    <p className="text-sm text-theme-500 dark:text-theme-400 break-all">
-                      {item.direct_link}
-                    </p>
-                    <p className="text-xs text-theme-400 dark:text-theme-600 mt-1">
-                      (Click to copy URL)
-                    </p>
-                  </div>
-                )
-              )}
+              {tasks.map((t) => (
+                <UploadItem key={t.id} taskId={t.id} />
+              ))}
             </div>
           )}
         </div>
-
-        {/* Learn more link */}
-        <Link
-          href="#features"
-          className={cn(
-            "inline-flex items-center px-6 py-3",
-            "bg-white dark:bg-theme-900 rounded-lg",
-            "text-theme-800 dark:text-theme-200",
-            "border border-theme-200 dark:border-theme-700",
-            "hover:bg-theme-100 dark:hover:bg-theme-800",
-            "transition-colors"
-          )}
-        >
-          Learn More
-          <svg
-            className="ml-2 w-4 h-4"
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-          >
-            <path
-              fillRule="evenodd"
-              d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0
-              111.414 1.414l-4 4a1 1 0 01-1.414
-              0l-4-4a1 1 0 010-1.414z"
-              clipRule="evenodd"
-            />
-          </svg>
-        </Link>
       </div>
 
       {/* Footer */}
@@ -429,9 +252,7 @@ export default function Home() {
                  text-theme-600 dark:text-theme-400 border-t border-theme-200 dark:border-theme-800"
       >
         <p>
-          Made with&nbsp;
-          <span className="text-red-500">&hearts;</span>
-          &nbsp; by You
+          Made with <span className="text-red-500">&hearts;</span> by You
         </p>
       </footer>
     </div>
