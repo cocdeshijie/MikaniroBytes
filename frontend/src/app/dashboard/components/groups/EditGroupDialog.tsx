@@ -12,6 +12,8 @@ interface GroupItem {
   allowed_extensions: string[];
   max_file_size: number;
   max_storage_size: number | null;
+  file_count: number;
+  storage_bytes: number;
 }
 
 /* util: “5gb” → bytes | null */
@@ -40,32 +42,35 @@ export default function EditGroupDialog({
   const { push } = useToast();
 
   /* stable local atoms */
-  const openA    = useMemo(() => atom(false), []);
-  const nameA    = useMemo(() => atom(group.name), [group]);
-  const allowA   = useMemo(() => atom(group.allowed_extensions.join(",")), [group]);
-  const maxFA    = useMemo(() => atom(String(group.max_file_size ?? "")), [group]);
-  const maxSA    = useMemo(() => atom(group.max_storage_size ?? ""), [group]);
-  const errA     = useMemo(() => atom(""), []);
-  const loadA    = useMemo(() => atom(false), []);
+  const openA = useMemo(() => atom(false), []);
+  const nameA = useMemo(() => atom(group.name), [group]);
+  const allowA = useMemo(() => atom(group.allowed_extensions.join(",")), [group]);
+  const maxFA = useMemo(() => atom(String(group.max_file_size ?? "")), [group]);
+  const maxSA = useMemo(() => atom(group.max_storage_size ?? ""), [group]);
+  const errA = useMemo(() => atom(""), []);
+  const loadA = useMemo(() => atom(false), []);
 
-  const [open, setOpen]       = useAtom(openA);
-  const [name, setName]       = useAtom(nameA);
-  const [allow, setAllow]     = useAtom(allowA);
-  const [maxF, setMaxF]       = useAtom(maxFA);
-  const [maxS, setMaxS]       = useAtom(maxSA);
-  const [err, setErr]         = useAtom(errA);
+  const [open, setOpen] = useAtom(openA);
+  const [name, setName] = useAtom(nameA);
+  const [allow, setAllow] = useAtom(allowA);
+  const [maxF, setMaxF] = useAtom(maxFA);
+  const [maxS, setMaxS] = useAtom(maxSA);
+  const [err, setErr] = useAtom(errA);
   const [loading, setLoading] = useAtom(loadA);
 
   /* ---------------- save ---------------- */
   async function handleSave() {
-    setErr(""); setLoading(true);
+    setErr("");
+    setLoading(true);
     try {
       const finalName =
         group.name === "SUPER_ADMIN" ? "SUPER_ADMIN" : name.trim() || group.name;
 
-      const exts = allow.trim() ? allow.split(",").map((x) => x.trim()).filter(Boolean) : [];
+      const exts = allow.trim()
+        ? allow.split(",").map((x) => x.trim()).filter(Boolean)
+        : [];
 
-      const maxFileBytes  = parseSizeToBytes(maxF) ?? undefined;
+      const maxFileBytes = parseSizeToBytes(maxF) ?? undefined;
       const maxStoreBytes = parseSizeToBytes(maxS);
 
       const res = await fetch(
@@ -93,8 +98,11 @@ export default function EditGroupDialog({
       push({ title: "Group updated", variant: "success" });
       setOpen(false);
     } catch (e: any) {
-      setErr(e.message); push({ title: "Update failed", variant: "error" });
-    } finally { setLoading(false); }
+      setErr(e.message);
+      push({ title: "Update failed", variant: "error" });
+    } finally {
+      setLoading(false);
+    }
   }
 
   /* ---------------- UI ---------------- */
@@ -107,10 +115,12 @@ export default function EditGroupDialog({
       </Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay className="bg-black/30 backdrop-blur-sm fixed inset-0 z-50" />
-        <Dialog.Content className={cn(
-          "fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2",
-          "bg-theme-50 dark:bg-theme-900 rounded-lg shadow-lg max-w-sm w-full p-6"
-        )}>
+        <Dialog.Content
+          className={cn(
+            "fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2",
+            "bg-theme-50 dark:bg-theme-900 rounded-lg shadow-lg max-w-sm w-full p-6"
+          )}
+        >
           <Dialog.Title className="text-lg font-medium mb-2">
             Edit Group “{group.name}”
           </Dialog.Title>
@@ -119,7 +129,9 @@ export default function EditGroupDialog({
           </Dialog.Description>
 
           {err && (
-            <p className="mb-3 p-3 rounded border border-red-500/50 text-red-600 text-sm">
+            <p
+              className="mb-3 p-3 rounded border border-red-500/50 text-red-600 text-sm"
+            >
               {err}
             </p>
           )}
@@ -129,7 +141,7 @@ export default function EditGroupDialog({
               <input
                 disabled={group.name === "SUPER_ADMIN"}
                 value={name}
-                onChange={(e)=>setName(e.target.value)}
+                onChange={(e) => setName(e.target.value)}
                 className="w-full px-3 py-2 rounded border border-theme-200 dark:border-theme-700
                            bg-theme-50 dark:bg-theme-800"
               />
@@ -137,7 +149,7 @@ export default function EditGroupDialog({
             <Field label="Allowed Extensions (comma‑sep)">
               <input
                 value={allow}
-                onChange={(e)=>setAllow(e.target.value)}
+                onChange={(e) => setAllow(e.target.value)}
                 placeholder="blank = any"
                 className="w-full px-3 py-2 rounded border border-theme-200 dark:border-theme-700
                            bg-theme-50 dark:bg-theme-800"
@@ -146,7 +158,7 @@ export default function EditGroupDialog({
             <Field label="Max File Size">
               <input
                 value={maxF}
-                onChange={(e)=>setMaxF(e.target.value)}
+                onChange={(e) => setMaxF(e.target.value)}
                 placeholder="e.g. 10MB – blank keeps current"
                 className="w-full px-3 py-2 rounded border border-theme-200 dark:border-theme-700
                            bg-theme-50 dark:bg-theme-800"
@@ -155,7 +167,7 @@ export default function EditGroupDialog({
             <Field label="Max Total Storage">
               <input
                 value={maxS}
-                onChange={(e)=>setMaxS(e.target.value)}
+                onChange={(e) => setMaxS(e.target.value)}
                 placeholder="blank = unlimited"
                 className="w-full px-3 py-2 rounded border border-theme-200 dark:border-theme-700
                            bg-theme-50 dark:bg-theme-800"

@@ -9,40 +9,44 @@ import { ByteValueTooltip } from "./ByteValueTooltip";
 import AddGroupDialog from "./AddGroupDialog";
 import EditGroupDialog from "./EditGroupDialog";
 import ConfirmDeleteGroupDialog from "./ConfirmDeleteGroupDialog";
+import ViewUsersDialog from "./ViewUsersDialog";
 
-/* ---------- TYPES ---------- */
-interface GroupItem {
+/* ---------- types ---------- */
+interface GroupRow {
   id: number;
   name: string;
   allowed_extensions: string[];
   max_file_size: number;
   max_storage_size: number | null;
+  file_count: number;
+  storage_bytes: number;
 }
+export type GroupBasic = Omit<GroupRow, "file_count" | "storage_bytes">;
 
-/* ---------- ATOMS ---------- */
-const groupsAtom = atom<GroupItem[]>([]);
-const hasFetchedAtom = atom(false);
-const loadingAtom = atom(false);
-const errorMsgAtom = atom("");
+/* ---------- atoms ---------- */
+const groupsAtom     = atom<GroupRow[]>([]);
+const fetchedAtom    = atom(false);
+const loadingAtom    = atom(false);
+const errorAtom      = atom("");
 
+/* ---------- component ---------- */
 export default function GroupsTab() {
   const { data: session } = useSession();
-  const [groups, setGroups] = useAtom(groupsAtom);
-  const [hasFetched, setHasFetched] = useAtom(hasFetchedAtom);
-  const [loading, setLoading] = useAtom(loadingAtom);
-  const [errorMsg, setErrorMsg] = useAtom(errorMsgAtom);
+  const [groups, setGroups]   = useAtom(groupsAtom);
+  const [fetched, setFetched] = useAtom(fetchedAtom);
+  const [loading, setLoad]    = useAtom(loadingAtom);
+  const [error, setError]     = useAtom(errorAtom);
 
-  /* ---------- fetch once ---------- */
+  /* -------- initial fetch -------- */
   useEffect(() => {
-    if (!session?.accessToken || hasFetched) return;
+    if (!session?.accessToken || fetched) return;
     fetchGroups();
-    setHasFetched(true);
+    setFetched(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.accessToken, hasFetched]);
+  }, [session?.accessToken, fetched]);
 
   async function fetchGroups() {
-    setLoading(true);
-    setErrorMsg("");
+    setLoad(true); setError("");
     try {
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/groups`,
@@ -51,36 +55,34 @@ export default function GroupsTab() {
       if (!res.ok) throw new Error("Failed to fetch groups");
       setGroups(await res.json());
     } catch (e: any) {
-      setErrorMsg(e.message);
-    } finally { setLoading(false); }
+      setError(e.message);
+    } finally { setLoad(false); }
   }
 
-  /* helpers to mutate local state after CRUD */
-  const onCreated = (g: GroupItem) => setGroups((p) => [...p, g]);
-  const onDeleted = (id: number) =>
+  /* -------- helpers to mutate list without refetch -------- */
+  const add  = (g: GroupBasic) =>
+    setGroups((p) => [...p, { ...g, file_count: 0, storage_bytes: 0 }]);
+  const upd  = (g: GroupBasic) =>
+    setGroups((p) => p.map((r) => (r.id === g.id ? { ...r, ...g } : r)));
+  const del  = (id: number)   =>
     setGroups((p) => p.filter((g) => g.id !== id));
-  const onUpdated = (u: GroupItem) =>
-    setGroups((p) => p.map((g) => (g.id === u.id ? u : g)));
 
-  const normalGroups = groups.filter((g) => g.name !== "SUPER_ADMIN");
-  const deletionLocked = normalGroups.length <= 1; // can't drop the last one
+  /* -------- derived -------- */
+  const normal = groups.filter((g) => g.name !== "SUPER_ADMIN");
+  const lockDelete = normal.length <= 1;
 
-  /* ---------- RENDER ---------- */
+  /* -------- UI -------- */
   return (
     <div>
       <h3 className={cn(
-        "text-lg font-medium text-theme-700 dark:text-theme-300 mb-2",
-        "border-b border-theme-200 dark:border-theme-800 pb-2"
+        "text-lg font-medium mb-2",
+        "border-b border-theme-200 dark:border-theme-800 pb-2",
       )}>
         Groups Management
       </h3>
-      <p className="text-sm text-theme-500 dark:text-theme-400 mb-4">
-        Create, edit, or remove groups. At least one non‑admin group must exist.
-      </p>
-
-      {errorMsg && (
+      {error && (
         <p className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded mb-4">
-          {errorMsg}
+          {error}
         </p>
       )}
 
@@ -88,14 +90,16 @@ export default function GroupsTab() {
         <span className="text-sm">
           {loading ? "Loading…" : `${groups.length} groups`}
         </span>
-        <AddGroupDialog sessionToken={session?.accessToken || ""} onCreated={onCreated} />
+        <AddGroupDialog
+          sessionToken={session?.accessToken || ""}
+          onCreated={add}
+        />
       </div>
 
-      {/* ---------- list ---------- */}
       <Tooltip.Provider delayDuration={100}>
         <div className={cn(
           "p-4 bg-theme-100/25 dark:bg-theme-900/25 rounded-lg",
-          "border border-theme-200/50 dark:border-theme-800/50"
+          "border border-theme-200/50 dark:border-theme-800/50",
         )}>
           {groups.length === 0 ? (
             <p>No groups found.</p>
@@ -103,21 +107,28 @@ export default function GroupsTab() {
             <ul className="space-y-3">
               {groups.map((g) => {
                 const isSuper = g.name === "SUPER_ADMIN";
-                const isLastNormal = !isSuper && deletionLocked;
+                const prevent = !isSuper && lockDelete;
+
                 return (
                   <li key={g.id} className={cn(
                     "p-3 rounded border bg-theme-50/20 dark:bg-theme-900/20",
-                    "border-theme-200/50 dark:border-theme-800/50"
+                    "border-theme-200/50 dark:border-theme-800/50",
                   )}>
-                    <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center justify-between gap-2 mb-2">
                       <p className="font-medium">{g.name}</p>
                       <div className="flex items-center gap-2">
+                        <ViewUsersDialog
+                          group={g}
+                          sessionToken={session?.accessToken || ""}
+                          /** refresh counts when users move / delete */
+                          onChanged={fetchGroups}
+                        />
                         <EditGroupDialog
                           group={g}
                           sessionToken={session?.accessToken || ""}
-                          onUpdated={onUpdated}
+                          onUpdated={upd}
                         />
-                        {isSuper || isLastNormal ? (
+                        {isSuper || prevent ? (
                           <button
                             disabled
                             title={isSuper
@@ -131,20 +142,23 @@ export default function GroupsTab() {
                           <ConfirmDeleteGroupDialog
                             group={g}
                             sessionToken={session?.accessToken || ""}
-                            onDeleted={(_, __) => onDeleted(g.id)}
+                            onDeleted={() => del(g.id)}
                           />
                         )}
                       </div>
                     </div>
-                    <p className="text-sm text-theme-600 dark:text-theme-400 mb-1">
-                      Max file size:&nbsp;
-                      <ByteValueTooltip bytes={g.max_file_size} />
-                    </p>
+
                     <p className="text-sm text-theme-600 dark:text-theme-400">
+                      Max file:&nbsp;
+                      <ByteValueTooltip bytes={g.max_file_size} />&nbsp;|&nbsp;
                       Max storage:&nbsp;
-                      {g.max_storage_size == null
+                      {g.max_storage_size === null
                         ? "Unlimited"
                         : <ByteValueTooltip bytes={g.max_storage_size} />}
+                    </p>
+                    <p className="text-sm text-theme-600 dark:text-theme-400 mt-0.5">
+                      Stored:&nbsp;{g.file_count} files –&nbsp;
+                      <ByteValueTooltip bytes={g.storage_bytes} />
                     </p>
                   </li>
                 );

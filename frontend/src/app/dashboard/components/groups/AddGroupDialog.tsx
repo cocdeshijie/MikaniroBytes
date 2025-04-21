@@ -12,6 +12,9 @@ interface GroupItem {
   allowed_extensions: string[];
   max_file_size: number;
   max_storage_size: number | null;
+  /* new aggregate fields */
+  file_count: number;
+  storage_bytes: number;
 }
 
 /* -------- util: “10mb” → bytes OR null (unlimited) -------- */
@@ -22,8 +25,8 @@ function parseSizeToBytes(input: string): number | null {
   if (!match) return null;
   const num = parseFloat(match[1].replace(",", "."));
   if (isNaN(num)) return null;
-  const mult: Record<string, number> = { b:1,kb:1e3,mb:1e6,gb:1e9,tb:1e12 };
-  return Math.round(num * mult[(match[2]||"b")]);
+  const mult: Record<string, number> = { b: 1, kb: 1e3, mb: 1e6, gb: 1e9, tb: 1e12 };
+  return Math.round(num * mult[match[2] || "b"]);
 }
 
 export default function AddGroupDialog({
@@ -34,34 +37,36 @@ export default function AddGroupDialog({
   onCreated: (g: GroupItem) => void;
 }) {
   const { push } = useToast();
-  /* -------- local atoms -------- */
-  const openA      = useMemo(() => atom(false), []);
-  const nameA      = useMemo(() => atom(""), []);
-  const allowA     = useMemo(() => atom(""), []);              // ← blank = any
-  const maxFileA   = useMemo(() => atom("10mb"), []);
-  const maxStoreA  = useMemo(() => atom(""), []);
-  const errA       = useMemo(() => atom<string>(""), []);
-  const loadingA   = useMemo(() => atom(false), []);
 
-  const [open, setOpen]         = useAtom(openA);
-  const [name, setName]         = useAtom(nameA);
-  const [allow, setAllow]       = useAtom(allowA);
-  const [maxFile, setMaxFile]   = useAtom(maxFileA);
+  /* -------- local atoms -------- */
+  const openA = useMemo(() => atom(false), []);
+  const nameA = useMemo(() => atom(""), []);
+  const allowA = useMemo(() => atom(""), []);
+  const maxFileA = useMemo(() => atom("10mb"), []);
+  const maxStoreA = useMemo(() => atom(""), []);
+  const errA = useMemo(() => atom<string>(""), []);
+  const loadingA = useMemo(() => atom(false), []);
+
+  const [open, setOpen] = useAtom(openA);
+  const [name, setName] = useAtom(nameA);
+  const [allow, setAllow] = useAtom(allowA);
+  const [maxFile, setMaxFile] = useAtom(maxFileA);
   const [maxStore, setMaxStore] = useAtom(maxStoreA);
-  const [errMsg, setErr]        = useAtom(errA);
-  const [loading, setLoading]   = useAtom(loadingA);
+  const [errMsg, setErr] = useAtom(errA);
+  const [loading, setLoading] = useAtom(loadingA);
 
   /* ---------------- CREATE ---------------- */
   async function handleCreate() {
-    setErr(""); setLoading(true);
+    setErr("");
+    setLoading(true);
     try {
       if (!name.trim()) throw new Error("Group name is required");
 
       const exts = allow.trim()
         ? allow.split(",").map((x) => x.trim()).filter(Boolean)
-        : [];                     // [] === allow everything
+        : [];
 
-      const fileBytes  = parseSizeToBytes(maxFile)  ?? undefined;
+      const fileBytes = parseSizeToBytes(maxFile) ?? undefined;
       const storeBytes = parseSizeToBytes(maxStore) ?? null;
 
       const res = await fetch(
@@ -81,71 +86,97 @@ export default function AddGroupDialog({
         }
       );
       if (!res.ok) {
-        const d = await res.json().catch(()=>{});
+        const d = await res.json().catch(() => ({}));
         throw new Error(d.detail || "Failed");
       }
       const newGroup: GroupItem = await res.json();
       onCreated(newGroup);
       push({ title: "Group created", variant: "success" });
-      setName(""); setAllow(""); setMaxFile("10mb"); setMaxStore(""); setOpen(false);
+      setName("");
+      setAllow("");
+      setMaxFile("10mb");
+      setMaxStore("");
+      setOpen(false);
     } catch (e: any) {
-      setErr(e.message); push({ title: "Create failed", variant: "error" });
-    } finally { setLoading(false); }
+      setErr(e.message);
+      push({ title: "Create failed", variant: "error" });
+    } finally {
+      setLoading(false);
+    }
   }
 
   /* ---------------- UI ---------------- */
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Trigger asChild>
-        <button className={cn(
-          "px-4 py-2 rounded bg-theme-500 text-white hover:bg-theme-600"
-        )}>
+        <button
+          className={cn(
+            "px-4 py-2 rounded bg-theme-500 text-white hover:bg-theme-600"
+          )}
+        >
           + Add Group
         </button>
       </Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay className="bg-black/30 backdrop-blur-sm fixed inset-0 z-50" />
-        <Dialog.Content className={cn(
-          "fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2",
-          "bg-theme-50 dark:bg-theme-900 rounded-lg shadow-lg max-w-sm w-full p-6"
-        )}>
+        <Dialog.Content
+          className={cn(
+            "fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2",
+            "bg-theme-50 dark:bg-theme-900 rounded-lg shadow-lg max-w-sm w-full p-6"
+          )}
+        >
           <Dialog.Title className="text-lg font-medium mb-2">
             Create New Group
           </Dialog.Title>
           <Dialog.Description className="text-sm text-theme-600 dark:text-theme-400 mb-4">
-            • Leave <strong>Allowed Extensions</strong> blank to accept <em>any</em> file type.<br/>
-            • Size fields accept &ldquo;10MB&rdquo;, &ldquo;1GB&rdquo;, etc. Blank =&nbsp;Unlimited.
+            • Leave <strong>Allowed Extensions</strong> blank to accept{" "}
+            <em>any</em> file type.
+            <br />• Size fields accept “10 MB”, “1 GB”, etc. Blank = Unlimited.
           </Dialog.Description>
 
           {errMsg && (
-            <p className="mb-3 p-3 rounded border border-red-500/50 text-red-600 text-sm">
+            <p
+              className="mb-3 p-3 rounded border border-red-500/50 text-red-600 text-sm"
+            >
               {errMsg}
             </p>
           )}
 
           <div className="space-y-4">
             <Field label="Group Name">
-              <input value={name} onChange={(e)=>setName(e.target.value)}
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
                 className="w-full px-3 py-2 rounded border border-theme-200
-                           dark:border-theme-700 bg-theme-50 dark:bg-theme-800" />
+                           dark:border-theme-700 bg-theme-50 dark:bg-theme-800"
+              />
             </Field>
             <Field label="Allowed Extensions (comma‑sep)">
-              <input value={allow} onChange={(e)=>setAllow(e.target.value)}
-                placeholder="jpg,png,gif  – blank: any"
+              <input
+                value={allow}
+                onChange={(e) => setAllow(e.target.value)}
+                placeholder="jpg,png,gif — blank: any"
                 className="w-full px-3 py-2 rounded border border-theme-200 dark:border-theme-700
-                           bg-theme-50 dark:bg-theme-800" />
+                           bg-theme-50 dark:bg-theme-800"
+              />
             </Field>
             <Field label="Max File Size">
-              <input value={maxFile} onChange={(e)=>setMaxFile(e.target.value)}
+              <input
+                value={maxFile}
+                onChange={(e) => setMaxFile(e.target.value)}
                 placeholder="e.g. 10MB"
                 className="w-full px-3 py-2 rounded border border-theme-200 dark:border-theme-700
-                           bg-theme-50 dark:bg-theme-800" />
+                           bg-theme-50 dark:bg-theme-800"
+              />
             </Field>
             <Field label="Max Total Storage">
-              <input value={maxStore} onChange={(e)=>setMaxStore(e.target.value)}
+              <input
+                value={maxStore}
+                onChange={(e) => setMaxStore(e.target.value)}
                 placeholder="blank = unlimited"
                 className="w-full px-3 py-2 rounded border border-theme-200 dark:border-theme-700
-                           bg-theme-50 dark:bg-theme-800" />
+                           bg-theme-50 dark:bg-theme-800"
+              />
             </Field>
           </div>
 
@@ -169,7 +200,6 @@ export default function AddGroupDialog({
   );
 }
 
-/* little wrapper to keep markup tidy */
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>

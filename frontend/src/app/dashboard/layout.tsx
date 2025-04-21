@@ -153,15 +153,8 @@ export default function DashboardLayout({
                 {/* Desktop nav buttons */}
                 <div className="space-y-2">
                   <NavButton href="/dashboard/files" label="My Files" />
-                  {isAdmin && (
-                    <NavButton href="/dashboard/groups" label="Groups" />
-                  )}
-                  {isAdmin && (
-                    <NavButton href="/dashboard/users" label="Users" />
-                  )}
-                  {isAdmin && (
-                    <NavButton href="/dashboard/configs" label="Configs" />
-                  )}
+                  {isAdmin && <NavButton href="/dashboard/groups" label="Groups" />}
+                  {isAdmin && <NavButton href="/dashboard/configs" label="Configs" />}
                 </div>
               </div>
             </div>
