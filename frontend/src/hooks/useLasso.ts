@@ -15,7 +15,7 @@ export function useLasso(
   boxStyle: React.CSSProperties;
   isVisible: boolean;
   onMouseDown: React.MouseEventHandler;
-  registerTile: (id: number, rect: DOMRect) => void;
+  registerTile: (id: number, rect: DOMRect | null) => void;
 } {
   /* ------------ refs (do not trigger re‑render) ----------------------- */
   const origin = useRef<{ x: number; y: number } | null>(null);
@@ -28,7 +28,10 @@ export function useLasso(
 
   /* ------------ helpers ------------------------------------------------ */
   const registerTile = useCallback(
-    (id: number, rect: DOMRect) => tileRects.current.set(id, rect),
+      (id: number, rect: DOMRect | null) => {
+        if (rect) tileRects.current.set(id, rect);
+        else      tileRects.current.delete(id);
+      },
     []
   );
 
