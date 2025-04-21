@@ -125,7 +125,7 @@ def upload_file(
 ):
     """
     Accept a single file upload (guest *or* authenticated).
-    If the user is authenticated we store `user_id`; otherwise `NULL`.
+    Anonymous uploads are attributed to the permanent **guest** account.
     """
     if not file:
         raise HTTPException(status_code=400, detail="No file uploaded")
@@ -145,6 +145,14 @@ def upload_file(
     with open(path, "wb") as out:
         out.write(contents)
 
+    # ---------------- figure out owner ----------------
+    owner_id: Optional[int]
+    if current_user:
+        owner_id = current_user.id
+    else:
+        guest = db.query(User).filter(User.username == "guest").first()
+        owner_id = guest.id if guest else None
+
     # ---------------- DB row ----------------
     db_file = FileModel(
         size=len(contents),
@@ -152,7 +160,7 @@ def upload_file(
         storage_type=StorageType.LOCAL,
         storage_data={"path": hashed_name},
         content_type=file.content_type or "application/octet-stream",
-        user_id=current_user.id if current_user else None,
+        user_id=owner_id,
         original_filename=file.filename,
     )
     db.add(db_file)
