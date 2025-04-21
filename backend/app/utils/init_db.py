@@ -11,11 +11,9 @@ def init_db(db: Session) -> None:
     """
     Run once at server start‑up.
 
-    • Ensure the SUPER_ADMIN group and at least one super‑admin user.
-    • Ensure there is **at least one** non‑admin group.
-      – If none exist we create a fallback group called “USERS”.
-    • Ensure exactly one SystemSettings row and make sure its
-      default_user_group_id points to a valid non‑admin group.
+    • Ensure the SUPER_ADMIN and GUEST groups and their bootstrap users.
+    • Ensure at least one *normal* group (neither SUPER_ADMIN nor GUEST).
+    • Ensure exactly one SystemSettings row (with valid fallback group).
     """
 
     # ------------------------------------------------------------------
@@ -50,53 +48,78 @@ def init_db(db: Session) -> None:
         print("Created super‑admin user: admin / admin")
 
     # ------------------------------------------------------------------
-    # 3) Make sure **some** non‑admin group exists
+    # 3) GUEST group  (special, cannot be deleted or assigned)
     # ------------------------------------------------------------------
-    non_admin_group = (
+    guest_group = db.query(Group).filter(Group.name == "GUEST").first()
+    if not guest_group:
+        guest_group = Group(name="GUEST")
+        guest_group.settings = GroupSettings(
+            allowed_extensions=["jpg", "png", "gif"],
+            max_file_size=5_000_000,       # 5 MB per file
+            max_storage_size=1_000_000_000 # 1 GB total
+        )
+        db.add(guest_group)
+        db.commit()
+        db.refresh(guest_group)
+
+    guest_user = db.query(User).filter(User.username == "guest").first()
+    if not guest_user:
+        guest_user = User(
+            username="guest",
+            hashed_password=None,          # no login
+            group_id=guest_group.id,
+        )
+        db.add(guest_user)
+        db.commit()
+        print("Created guest user")
+
+    # ------------------------------------------------------------------
+    # 4) Make sure **some** normal group exists
+    #     (“normal” = not SUPER_ADMIN and not GUEST)
+    # ------------------------------------------------------------------
+    normal_group = (
         db.query(Group)
-        .filter(and_(Group.id != super_admin_group.id))
+        .filter(and_(Group.name.notin_(["SUPER_ADMIN", "GUEST"])))
         .order_by(Group.id)
         .first()
     )
 
-    if not non_admin_group:
-        # None exist – create a sensible fallback
-        non_admin_group = Group(name="USERS")
-        non_admin_group.settings = GroupSettings(
+    if not normal_group:
+        # None exist – create fallback USERS group
+        normal_group = Group(name="USERS")
+        normal_group.settings = GroupSettings(
             allowed_extensions=["jpg", "png", "gif"],
-            max_file_size=10_000_000,       # 10 MB
-            max_storage_size=500_000_000,   # 500 MB total
+            max_file_size=10_000_000,       # 10 MB
+            max_storage_size=500_000_000,   # 500 MB total
         )
-        db.add(non_admin_group)
+        db.add(normal_group)
         db.commit()
-        db.refresh(non_admin_group)
+        db.refresh(normal_group)
 
     # ------------------------------------------------------------------
-    # 4) SystemSettings row – ensure it exists and references a valid
-    #    *non‑admin* default_user_group_id.
+    # 5) SystemSettings row
     # ------------------------------------------------------------------
     system_settings = db.query(SystemSettings).first()
     if not system_settings:
         system_settings = SystemSettings(
             registration_enabled=True,
             public_upload_enabled=False,
-            default_user_group_id=non_admin_group.id,
+            default_user_group_id=normal_group.id,
         )
         db.add(system_settings)
         db.commit()
     else:
-        # If the stored default group is missing or points to a deleted group
+        # Validate stored default group
         if not system_settings.default_user_group_id:
-            system_settings.default_user_group_id = non_admin_group.id
+            system_settings.default_user_group_id = normal_group.id
             db.add(system_settings)
             db.commit()
         else:
-            # validate the referenced group still exists & isn’t SUPER_ADMIN
             current = db.query(Group).filter(
                 Group.id == system_settings.default_user_group_id
             ).first()
-            if not current or current.name == "SUPER_ADMIN":
-                system_settings.default_user_group_id = non_admin_group.id
+            if not current or current.name in ("SUPER_ADMIN", "GUEST"):
+                system_settings.default_user_group_id = normal_group.id
                 db.add(system_settings)
                 db.commit()
 
