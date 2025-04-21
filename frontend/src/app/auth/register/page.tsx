@@ -1,82 +1,138 @@
 "use client";
 
-import { FormEvent } from "react";
+import { FormEvent, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { useAtom, atom } from "jotai";
 import { cn } from "@/utils/cn";
 
-// Create atoms for form state
-const usernameAtom = atom("");
-const emailAtom = atom("");
-const passwordAtom = atom("");
-const errorMsgAtom = atom("");
+/* ------------------------------------------------------------------ */
+/*                       local Jotai atoms                            */
+/* ------------------------------------------------------------------ */
+const usernameA = atom("");
+const emailA    = atom("");
+const passwordA = atom("");
+const errorA    = atom("");
+const enabledA  = atom<null | boolean>(null);     // null = loading
 
-/**
- * Register Page with modern minimal styling
- */
 export default function RegisterPage() {
   const router = useRouter();
 
-  // Use atoms instead of useState
-  const [username, setUsername] = useAtom(usernameAtom);
-  const [email, setEmail] = useAtom(emailAtom);
-  const [password, setPassword] = useAtom(passwordAtom);
-  const [errorMsg, setErrorMsg] = useAtom(errorMsgAtom);
+  const [username, setUsername] = useAtom(usernameA);
+  const [email, setEmail]       = useAtom(emailA);
+  const [password, setPassword] = useAtom(passwordA);
+  const [errorMsg, setError]    = useAtom(errorA);
+  const [enabled, setEnabled]   = useAtom(enabledA);
 
+  /* ------------ fetch public flag once ------------ */
+  useEffect(() => {
+    (async () => {
+      try {
+        const res  = await fetch(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/registration-enabled`,
+          { cache: "no-store" }
+        );
+        const data = await res.json();
+        setEnabled(Boolean(data?.enabled));
+      } catch {
+        setEnabled(true);          // network error → assume open
+      }
+    })();
+  }, []);
+
+  /* ------------ normal submit ------------ */
   async function handleRegister(e: FormEvent) {
     e.preventDefault();
-    setErrorMsg("");
+    setError("");
 
     try {
-      // 1) Call FastAPI /auth/register
-      const res = await fetch("http://localhost:8000/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, email, password }),
-      });
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/register`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, email, password }),
+        }
+      );
 
       if (!res.ok) {
-        const data = await res.json();
-        // e.g. {detail: "..."}
-        throw new Error(data.detail || "Registration failed");
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.detail || "Registration failed");
       }
 
-      // 2) If success => auto-login with NextAuth
-      // signIn returns { ok: boolean, error: string|null, ... }
-      const loginResult = await signIn("credentials", {
+      /* auto‑login */
+      const login = await signIn("credentials", {
         username,
         password,
-        redirect: false, // we'll handle redirect manually
+        redirect: false,
       });
+      if (login?.error) throw new Error(login.error);
 
-      if (loginResult?.error) {
-        // If signIn failed for some reason (shouldn't happen if password is correct)
-        throw new Error(loginResult.error);
-      }
-
-      // 3) If signIn was successful, go to /user
       router.push("/profile");
     } catch (err: any) {
-      setErrorMsg(err.message || "Registration error");
+      setError(err.message || "Registration error");
     }
   }
 
+  /* ------------------------------------------------------------------ */
+  /*                            RENDER                                  */
+  /* ------------------------------------------------------------------ */
+  if (enabled === false) {
+    /* -------- pretty “disabled” message -------- */
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-theme-50 dark:bg-theme-950 p-4">
+        <div
+          className={cn(
+            "max-w-md w-full text-center p-8 rounded-xl",
+            "bg-white dark:bg-theme-900",
+            "shadow-md ring-1 ring-theme-200 dark:ring-theme-800"
+          )}
+        >
+          <h1 className="text-2xl font-bold text-theme-900 dark:text-theme-100 mb-4">
+            Registration Disabled
+          </h1>
+          <p className="text-theme-700 dark:text-theme-300">
+            Sorry, new accounts cannot be created at the moment.
+          </p>
+          <div className="mt-6">
+            <a
+              href="/auth/login"
+              className="px-4 py-2 rounded bg-theme-500 text-white hover:bg-theme-600"
+            >
+              Back to sign‑in
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* loading spinner while we don’t know yet */
+  if (enabled === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-theme-50 dark:bg-theme-950">
+        <p className="text-theme-700 dark:text-theme-300">Checking…</p>
+      </div>
+    );
+  }
+
   return (
-    <div className={cn(
-      "min-h-screen flex flex-col items-center justify-center",
-      "bg-theme-50 dark:bg-theme-950",
-      "p-4"
-    )}>
+    <div
+      className={cn(
+        "min-h-screen flex flex-col items-center justify-center",
+        "bg-theme-50 dark:bg-theme-950",
+        "p-4"
+      )}
+    >
       <div className="max-w-md w-full">
-        <div className={cn(
-          "mb-10",
-        )}>
-          <h1 className={cn(
-            "text-xl sm:text-3xl lg:text-4xl font-bold",
-            "text-theme-900 dark:text-theme-100",
-            "leading-tight flex items-center gap-2",
-          )}>
+        <div className={cn("mb-10")}>
+          <h1
+            className={cn(
+              "text-xl sm:text-3xl lg:text-4xl font-bold",
+              "text-theme-900 dark:text-theme-100",
+              "leading-tight flex items-center gap-2"
+            )}
+          >
             Create Account
             <div className="h-1 w-12 bg-theme-500 rounded-full inline-block ml-2"></div>
           </h1>
@@ -93,109 +149,59 @@ export default function RegisterPage() {
             "shadow-sm hover:shadow-md transition-all duration-300"
           )}
         >
-          {/* Form */}
           <div className="p-8">
             {errorMsg && (
-              <div className={cn(
-                "bg-red-50 dark:bg-red-900/20",
-                "text-red-600 dark:text-red-400",
-                "p-4 mb-6 rounded-lg",
-                "border border-red-100 dark:border-red-800/50"
-              )}>
+              <div
+                className={cn(
+                  "bg-red-50 dark:bg-red-900/20",
+                  "text-red-600 dark:text-red-400",
+                  "p-4 mb-6 rounded-lg",
+                  "border border-red-100 dark:border-red-800/50"
+                )}
+              >
                 {errorMsg}
               </div>
             )}
 
-            <div className="mb-6">
-              <label
-                htmlFor="username"
-                className="block mb-2 text-sm font-medium text-theme-500"
-              >
-                Username
-              </label>
+            {/* username */}
+            <Field label="Username">
               <input
-                id="username"
-                className={cn(
-                  "w-full px-4 py-3 rounded-lg",
-                  "bg-theme-50 dark:bg-theme-800",
-                  "border border-theme-200 dark:border-theme-700",
-                  "focus:border-theme-500 focus:outline-none",
-                  "transition-colors duration-200",
-                  "text-theme-900 dark:text-theme-100"
-                )}
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Choose a username"
-                required
               />
-            </div>
+            </Field>
 
-            <div className="mb-6">
-              <div className="flex items-center justify-between mb-2">
-                <label
-                  htmlFor="email"
-                  className="text-sm font-medium text-theme-500"
-                >
-                  Email
-                </label>
-                <span className="text-xs text-theme-400 dark:text-theme-500">
-                  Optional
-                </span>
-              </div>
+            {/* email */}
+            <Field label="Email (optional)">
               <input
-                id="email"
                 type="email"
-                className={cn(
-                  "w-full px-4 py-3 rounded-lg",
-                  "bg-theme-50 dark:bg-theme-800",
-                  "border border-theme-200 dark:border-theme-700",
-                  "focus:border-theme-500 focus:outline-none",
-                  "transition-colors duration-200",
-                  "text-theme-900 dark:text-theme-100"
-                )}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="your@email.com"
+                placeholder="you@email.com"
               />
-            </div>
+            </Field>
 
-            <div className="mb-8">
-              <label
-                htmlFor="password"
-                className="block mb-2 text-sm font-medium text-theme-500"
-              >
-                Password
-              </label>
+            {/* password */}
+            <Field label="Password">
               <input
-                id="password"
                 type="password"
-                className={cn(
-                  "w-full px-4 py-3 rounded-lg",
-                  "bg-theme-50 dark:bg-theme-800",
-                  "border border-theme-200 dark:border-theme-700",
-                  "focus:border-theme-500 focus:outline-none",
-                  "transition-colors duration-200",
-                  "text-theme-900 dark:text-theme-100"
-                )}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Create a strong password"
-                required
               />
-            </div>
+            </Field>
 
+            {/* submit */}
             <button
               type="submit"
               className={cn(
                 "w-full py-3 px-6 rounded-lg mt-4",
                 "bg-theme-500 hover:bg-theme-600 active:bg-theme-700",
-                "text-white font-medium",
-                "transition-all duration-200",
-                "flex items-center justify-center gap-2"
+                "text-white font-medium transition-all duration-200"
               )}
             >
-              <span>Create Account</span>
-              <div className="w-1 h-4 bg-white/50 rounded-full"></div>
+              Create Account
             </button>
 
             <div className="mt-6 text-center text-sm text-theme-600 dark:text-theme-400">
@@ -207,6 +213,24 @@ export default function RegisterPage() {
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+/* small helper for field layout */
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="mb-6">
+      <label className="block mb-2 text-sm font-medium text-theme-500">
+        {label}
+      </label>
+      {children}
     </div>
   );
 }

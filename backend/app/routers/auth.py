@@ -15,6 +15,23 @@ from app.dependencies.auth import get_current_user
 router = APIRouter()
 
 
+# ────────────────────────────────────────────────────────────────────
+#  helper – public switch
+# ────────────────────────────────────────────────────────────────────
+@router.get("/registration-enabled")
+def registration_enabled(db: Session = Depends(get_db)):
+    """
+    Lightweight public endpoint.
+
+    Returns: ``{"enabled": true/false}``
+    """
+    s = db.query(SystemSettings).first()
+    return {"enabled": bool(s.registration_enabled) if s else True}
+
+
+# ────────────────────────────────────────────────────────────────────
+#  Pydantic DTOs
+# ────────────────────────────────────────────────────────────────────
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -39,6 +56,9 @@ class RegisterRequest(BaseModel):
     password: str
 
 
+# ────────────────────────────────────────────────────────────────────
+#  Auth / Session routes
+# ────────────────────────────────────────────────────────────────────
 @router.post("/login")
 def login(payload: LoginRequest,
           request: Request,
