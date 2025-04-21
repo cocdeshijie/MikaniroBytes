@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, ForeignKey
 from sqlalchemy.dialects.sqlite import JSON as SQLiteJSON
 from sqlalchemy.orm import relationship
 
@@ -11,11 +11,11 @@ class GroupSettings(Base):
     id = Column(Integer, primary_key=True)
     group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
 
-    # Example toggles & limits
-    allowed_extensions = Column(SQLiteJSON, default=["jpg", "png", "gif"])
-    max_file_size = Column(Integer, default=10_000_000)  # in bytes, e.g. 10 MB
+    # Stored as simple JSON list.  Using default=list avoids the
+    # “mutable default” foot‑gun when someone mutates the list in place.
+    allowed_extensions = Column(SQLiteJSON, default=list)
 
-    # NEW: total storage limit for the entire user or group; None => unlimited
-    max_storage_size = Column(Integer, nullable=True, default=None)
+    max_file_size = Column(Integer, default=10_000_000)      # bytes
+    max_storage_size = Column(Integer, nullable=True)        # None => unlimited
 
     group = relationship("Group", back_populates="settings")

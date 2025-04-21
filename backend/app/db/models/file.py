@@ -19,14 +19,14 @@ class File(Base):
 
     id = Column(Integer, primary_key=True)
 
-    # NEW → store raw byte size for quick aggregation
+    # raw size in bytes
     size = Column(Integer, nullable=False, default=0)
 
     file_type = Column(Enum(FileType), nullable=False, default=FileType.BASE)
     storage_type = Column(
         Enum(StorageType), nullable=False, default=StorageType.LOCAL
     )
-    storage_data = Column(SQLiteJSON, default={})
+    storage_data = Column(SQLiteJSON, default=dict)
     content_type = Column(String, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -36,6 +36,7 @@ class File(Base):
         Integer,
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
+        index=True,                         # ★ speeds up aggregation queries
     )
     uploader = relationship("User", backref="files", foreign_keys=[user_id])
 

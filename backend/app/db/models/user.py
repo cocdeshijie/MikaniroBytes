@@ -12,8 +12,11 @@ class User(Base):
     email = Column(String, unique=True, nullable=True)
     hashed_password = Column(String, nullable=True)
 
-    # Reference the group
-    group_id = Column(Integer, ForeignKey("groups.id", ondelete="SET NULL"))
+    group_id = Column(
+        Integer,
+        ForeignKey("groups.id", ondelete="SET NULL"),
+        index=True,                       # ★ speeds up joins / lookups
+    )
     group = relationship("Group", back_populates="users")
 
     oauth_accounts = relationship("UserOAuth", back_populates="user")
