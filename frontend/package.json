@@ -16,6 +16,7 @@
     "@radix-ui/react-select": "^2.1.7",
     "@radix-ui/react-toast": "^1.2.10",
     "@radix-ui/react-tooltip": "^1.2.0",
+    "@tailwindcss/line-clamp": "^0.4.4",
     "clsx": "^2.1.1",
     "jotai": "^2.12.2",
     "next": "14.2.26",
