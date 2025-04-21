@@ -13,6 +13,7 @@ from app.db.models.group_settings import GroupSettings
 from app.db.models.system_settings import SystemSettings
 from app.db.models.file import File
 from app.db.models.user_session import UserSession
+from app.routers.files import MyFileItem
 
 router = APIRouter()
 
@@ -466,3 +467,61 @@ def delete_user(
     db.delete(target)
     db.commit()
     return {"detail": f"User {target.username} deleted.", "files_deleted": delete_files}
+
+
+# --------------------------------------------------------------------- #
+#                       NEW – group / user file lists                   #
+# --------------------------------------------------------------------- #
+@router.get("/groups/{group_id}/files", response_model=List[MyFileItem])
+def list_group_files(
+    group_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return **every** file whose owner is in the given group."""
+    if not current_user.group or current_user.group.name != "SUPER_ADMIN":
+        raise HTTPException(status_code=403, detail="SUPER_ADMIN only")
+
+    rows = (
+        db.query(File)
+        .join(User, User.id == File.user_id)
+        .filter(User.group_id == group_id)
+        .order_by(File.id.desc())
+        .all()
+    )
+
+    def to_item(f: File) -> MyFileItem:
+        return MyFileItem(
+            file_id=f.id,
+            original_filename=f.original_filename,
+            direct_link=f"/uploads/{f.storage_data.get('path')}",
+        )
+
+    return [to_item(f) for f in rows]
+
+
+@router.get("/users/{user_id}/files", response_model=List[MyFileItem])
+def list_user_files(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return files for a **specific** user (admin‑only)."""
+    if not current_user.group or current_user.group.name != "SUPER_ADMIN":
+        raise HTTPException(status_code=403, detail="SUPER_ADMIN only")
+
+    rows = (
+        db.query(File)
+        .filter(File.user_id == user_id)
+        .order_by(File.id.desc())
+        .all()
+    )
+
+    def to_item(f: File) -> MyFileItem:
+        return MyFileItem(
+            file_id=f.id,
+            original_filename=f.original_filename,
+            direct_link=f"/uploads/{f.storage_data.get('path')}",
+        )
+
+    return [to_item(f) for f in rows]
