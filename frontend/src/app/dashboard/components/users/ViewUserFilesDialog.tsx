@@ -49,7 +49,6 @@ export default function ViewUserFilesDialog({
 
           <FileViewer
             fetchEndpoint={`${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/users/${userId}/files`}
-            deleteEndpoint={`${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/files/batch-delete`}
             sessionToken={sessionToken}
             readOnly={false}
           />
