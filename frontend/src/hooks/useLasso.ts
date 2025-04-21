@@ -4,88 +4,118 @@ import { RefObject, useCallback, useRef } from "react";
 import { atom, useAtom } from "jotai";
 
 /**
- * Generic lasso‑selection hook.
- * - Caller registers every tile’s DOMRect.
- * - On drag we compute intersecting IDs and pass them to `onSelect`.
+ * Generic marquee / lasso‑selection hook that works inside any scrollable
+ * container. Pass a `containerRef` so all math is relative to it.
  */
 export function useLasso(
-  onSelect: (ids: number[]) => void
+  onSelect: (ids: number[]) => void,
+  containerRef: RefObject<HTMLElement>
 ): {
-  overlayRef: RefObject<HTMLDivElement>;
   boxStyle: React.CSSProperties;
   isVisible: boolean;
   onMouseDown: React.MouseEventHandler;
   registerTile: (id: number, rect: DOMRect | null) => void;
 } {
-  /* ------------ refs (do not trigger re‑render) ----------------------- */
-  const origin = useRef<{ x: number; y: number } | null>(null);
-  const tileRects = useRef<Map<number, DOMRect>>(new Map());
-  const overlayRef = useRef<HTMLDivElement>(null);
+  /* ---------- mutable refs (no re‑renders) ----------------------- */
+  const origin      = useRef<{ x: number; y: number } | null>(null);
+  const tileRects   = useRef<Map<number, DOMRect>>(new Map());
 
-  /* ------------ jotai atom for overlay style -------------------------- */
+  /* ---------- lasso overlay style held in a jotai atom ----------- */
   const boxAtom = useRef(atom<React.CSSProperties>({})).current;
   const [boxStyle, setBoxStyle] = useAtom(boxAtom);
 
-  /* ------------ helpers ------------------------------------------------ */
+  /* ---------- register / unregister each selectable tile --------- */
   const registerTile = useCallback(
-      (id: number, rect: DOMRect | null) => {
-        if (rect) tileRects.current.set(id, rect);
-        else      tileRects.current.delete(id);
-      },
-    []
+    (id: number, rect: DOMRect | null) => {
+      const cont = containerRef.current;
+      if (!cont || !rect) {
+        tileRects.current.delete(id);
+        return;
+      }
+      const cRect = cont.getBoundingClientRect();      // coords → relative
+      tileRects.current.set(
+        id,
+        new DOMRect(
+          rect.left - cRect.left,
+          rect.top  - cRect.top,
+          rect.width,
+          rect.height
+        )
+      );
+    },
+    [containerRef]
   );
 
+  /* ---------- mouse listeners ----------------------------------- */
   const onMouseDown: React.MouseEventHandler = (e) => {
-    if (e.button !== 0) return; // left‑click only
-    if ((e.target as HTMLElement).closest("button,input,svg")) return;
+    if (e.button !== 0) return;                        // only LMB
+    const cont = containerRef.current;
+    if (!cont) return;
 
-    origin.current = { x: e.clientX, y: e.clientY };
-    setBoxStyle({ left: e.clientX, top: e.clientY, width: 0, height: 0 });
+    if ((e.target as HTMLElement).closest("button,input,svg,a")) return;
 
-    /* ---- move ---- */
+    const cRect = cont.getBoundingClientRect();
+    origin.current = {
+      x: e.clientX - cRect.left,
+      y: e.clientY - cRect.top,
+    };
+    setBoxStyle({
+      left  : origin.current.x,
+      top   : origin.current.y,
+      width : 0,
+      height: 0,
+    });
+
     const move = (ev: MouseEvent) => {
       if (!origin.current) return;
-      const x1 = Math.min(origin.current.x, ev.clientX);
-      const y1 = Math.min(origin.current.y, ev.clientY);
-      const x2 = Math.max(origin.current.x, ev.clientX);
-      const y2 = Math.max(origin.current.y, ev.clientY);
-      setBoxStyle({ left: x1, top: y1, width: x2 - x1, height: y2 - y1 });
+      const x = ev.clientX - cRect.left;
+      const y = ev.clientY - cRect.top;
+      const left = Math.min(origin.current.x, x);
+      const top  = Math.min(origin.current.y, y);
+      setBoxStyle({
+        left,
+        top,
+        width : Math.abs(x - origin.current.x),
+        height: Math.abs(y - origin.current.y),
+      });
     };
 
-    /* ---- up ---- */
     const up = (ev: MouseEvent) => {
       if (!origin.current) return;
-      const x1 = Math.min(origin.current.x, ev.clientX);
-      const y1 = Math.min(origin.current.y, ev.clientY);
-      const x2 = Math.max(origin.current.x, ev.clientX);
-      const y2 = Math.max(origin.current.y, ev.clientY);
+      const x2 = ev.clientX - cRect.left;
+      const y2 = ev.clientY - cRect.top;
+      const x1 = origin.current.x;
+      const y1 = origin.current.y;
 
-      const inside: number[] = [];
+      const left   = Math.min(x1, x2);
+      const top    = Math.min(y1, y2);
+      const right  = Math.max(x1, x2);
+      const bottom = Math.max(y1, y2);
+
+      const sel: number[] = [];
       tileRects.current.forEach((r, id) => {
-        if (r.right >= x1 && r.left <= x2 && r.bottom >= y1 && r.top <= y2) {
-          inside.push(id);
-        }
+        if (
+          r.right  >= left  &&
+          r.left   <= right &&
+          r.bottom >= top   &&
+          r.top    <= bottom
+        ) sel.push(id);
       });
-      onSelect(inside);
+      onSelect(sel);
 
       origin.current = null;
       setBoxStyle({});
       window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
+      window.removeEventListener("mouseup",   up);
     };
 
     window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
+    window.addEventListener("mouseup",   up);
   };
 
-  /* ------------ derived flag (width / height may be string) ----------- */
-  const w =
-    typeof boxStyle.width === "number" ? boxStyle.width : Number(boxStyle.width);
-  const h =
-    typeof boxStyle.height === "number"
-      ? boxStyle.height
-      : Number(boxStyle.height);
-  const isVisible = w > 0 && h > 0;
+  const isVisible =
+    (boxStyle.width  as number || 0) > 0 &&
+    (boxStyle.height as number || 0) > 0;
 
-  return { overlayRef, boxStyle, isVisible, onMouseDown, registerTile };
+  return { boxStyle, isVisible, onMouseDown, registerTile };
 }
