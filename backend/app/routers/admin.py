@@ -17,12 +17,17 @@ from app.db.models.user_session import UserSession
 router = APIRouter()
 
 
+# --------------------------------------------------------------------- #
+#                                helpers                                #
+# --------------------------------------------------------------------- #
 def ensure_superadmin(user: User):
     if not user.group or user.group.name != "SUPER_ADMIN":
         raise HTTPException(status_code=403, detail="Only SUPER_ADMIN allowed")
 
 
-# ---------- Models ----------
+# --------------------------------------------------------------------- #
+#                            Pydantic models                            #
+# --------------------------------------------------------------------- #
 class GroupCreate(BaseModel):
     name: str
     allowed_extensions: Optional[List[str]] = None
@@ -37,6 +42,10 @@ class GroupRead(BaseModel):
     max_file_size: Optional[int]
     max_storage_size: Optional[int]
 
+    # NEW — aggregates
+    file_count: int
+    storage_bytes: int
+
     class Config:
         orm_mode = True
 
@@ -48,23 +57,72 @@ class GroupUpdate(BaseModel):
     max_storage_size: Optional[int] = None
 
 
+class UserRead(BaseModel):
+    id: int
+    username: str
+    email: Optional[str]
+    group: Optional[dict]
+    file_count: int
+    storage_bytes: int
+
+    class Config:
+        orm_mode = True
+
+
+class UserGroupUpdate(BaseModel):
+    group_id: int
+
+
+class SystemSettingsRead(BaseModel):
+    registration_enabled: bool
+    public_upload_enabled: bool
+    default_user_group_id: Optional[int]
+
+
+class SystemSettingsUpdate(BaseModel):
+    registration_enabled: Optional[bool] = None
+    public_upload_enabled: Optional[bool] = None
+    default_user_group_id: Optional[int] = None
+
+
+# --------------------------------------------------------------------- #
+#                               Groups API                              #
+# --------------------------------------------------------------------- #
 @router.get("/groups", response_model=List[GroupRead])
 def list_groups(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    Return all groups with their limits **and** total file usage
+    across every user in the group.
+    """
     ensure_superadmin(current_user)
-    groups = db.query(Group).all()
+
+    rows = (
+        db.query(Group)
+        .outerjoin(User, User.group_id == Group.id)
+        .outerjoin(File, File.user_id == User.id)
+        .add_columns(
+            func.count(File.id).label("file_cnt"),
+            func.coalesce(func.sum(File.size), 0).label("total_bytes"),
+        )
+        .group_by(Group.id)
+        .all()
+    )
+
     out: list[GroupRead] = []
-    for g in groups:
-        sett = g.settings
+    for grp, file_cnt, total_bytes in rows:
+        sett = grp.settings
         out.append(
             GroupRead(
-                id=g.id,
-                name=g.name,
+                id=grp.id,
+                name=grp.name,
                 allowed_extensions=sett.allowed_extensions if sett else [],
                 max_file_size=sett.max_file_size if sett else None,
                 max_storage_size=sett.max_storage_size if sett else None,
+                file_count=file_cnt,
+                storage_bytes=total_bytes,
             )
         )
     return out
@@ -88,7 +146,9 @@ def create_group(
         max_storage_size=payload.max_storage_size,
     )
     grp.settings = sett
-    db.add(grp); db.commit(); db.refresh(grp); db.refresh(sett)
+    db.add(grp)
+    db.commit()
+    db.refresh(grp)
 
     return GroupRead(
         id=grp.id,
@@ -96,6 +156,8 @@ def create_group(
         allowed_extensions=sett.allowed_extensions,
         max_file_size=sett.max_file_size,
         max_storage_size=sett.max_storage_size,
+        file_count=0,
+        storage_bytes=0,
     )
 
 
@@ -124,11 +186,7 @@ def update_group(
         db_group.name = payload.name
 
     # update settings
-    settings = db_group.settings
-    if not settings:
-        settings = GroupSettings(group_id=db_group.id)
-        db.add(settings)
-
+    settings = db_group.settings or GroupSettings(group_id=db_group.id)
     if payload.allowed_extensions is not None:
         settings.allowed_extensions = payload.allowed_extensions
     if payload.max_file_size is not None:
@@ -136,17 +194,29 @@ def update_group(
     if payload.max_storage_size is not None:
         settings.max_storage_size = payload.max_storage_size
 
-    db.add(db_group)
+    db.add_all([db_group, settings])
     db.commit()
     db.refresh(db_group)
-    db.refresh(settings)
+
+    # recalc aggregates
+    file_cnt, total_bytes = (
+        db.query(
+            func.count(File.id),
+            func.coalesce(func.sum(File.size), 0)
+        )
+        .join(User, User.id == File.user_id)
+        .filter(User.group_id == db_group.id)
+        .first()
+    )
 
     return GroupRead(
         id=db_group.id,
         name=db_group.name,
         allowed_extensions=settings.allowed_extensions,
         max_file_size=settings.max_file_size,
-        max_storage_size=settings.max_storage_size
+        max_storage_size=settings.max_storage_size,
+        file_count=file_cnt,
+        storage_bytes=total_bytes,
     )
 
 
@@ -158,10 +228,9 @@ def delete_group(
     current_user: User = Depends(get_current_user),
 ):
     """
-    • SUPER_ADMIN group cannot be deleted.
-    • At least one non‑admin group must remain.
-    • If the deleted group is the current default_user_group in SystemSettings,
-      automatically switch default_user_group_id to the newest remaining group.
+    • SUPER_ADMIN group cannot be deleted
+    • At least one other group must remain
+    • If the deleted group is the current default_user_group, fallback
     """
     ensure_superadmin(current_user)
 
@@ -171,51 +240,51 @@ def delete_group(
     if grp.name == "SUPER_ADMIN":
         raise HTTPException(status_code=400, detail="Cannot delete SUPER_ADMIN")
 
+    # must keep at least one non‑admin group
     remaining = db.query(func.count(Group.id)).filter(
         Group.id != group_id, Group.name != "SUPER_ADMIN"
     ).scalar()
     if remaining == 0:
         raise HTTPException(
-            status_code=400,
-            detail="At least one non‑admin group must remain",
+            status_code=400, detail="At least one non‑admin group must remain"
         )
 
-    # if this group is default in system settings → pick fallback
+    # fallback for SystemSettings.default_user_group_id
     settings = db.query(SystemSettings).first()
     if settings and settings.default_user_group_id == group_id:
         fallback = (
             db.query(Group)
             .filter(Group.id != group_id, Group.name != "SUPER_ADMIN")
-            .order_by(desc(Group.id))           # “last created” = highest id
+            .order_by(desc(Group.id))
             .first()
         )
         settings.default_user_group_id = fallback.id if fallback else None
         db.add(settings)
 
-    # cascade users and (optionally) files
-    user_ids = [u.id for u in grp.users]
-    if delete_files and user_ids:
-        db.query(File).filter(File.user_id.in_(user_ids)).delete(synchronize_session=False)
-    db.query(User).filter(User.group_id == group_id).delete(synchronize_session=False)
+    user_ids = [uid for (uid,) in db.query(User.id).filter(
+        User.group_id == group_id
+    ).all()]
 
+    if delete_files and user_ids:
+        db.query(File).filter(File.user_id.in_(user_ids)).delete(
+            synchronize_session=False
+        )
+
+    # wipe users (none of them are in the session identity‑map)
+    db.query(User).filter(User.id.in_(user_ids)).delete(
+        synchronize_session=False
+    )
+
+    # finally delete the group itself
     db.delete(grp)
     db.commit()
 
     return {"detail": f"Group '{grp.name}' deleted"}
 
 
-class SystemSettingsRead(BaseModel):
-    registration_enabled: bool
-    public_upload_enabled: bool
-    default_user_group_id: Optional[int]
-
-
-class SystemSettingsUpdate(BaseModel):
-    registration_enabled: Optional[bool] = None
-    public_upload_enabled: Optional[bool] = None
-    default_user_group_id: Optional[int] = None
-
-
+# --------------------------------------------------------------------- #
+#                            System settings                            #
+# --------------------------------------------------------------------- #
 @router.get("/system-settings", response_model=SystemSettingsRead)
 def get_system_settings(
     db: Session = Depends(get_db),
@@ -276,36 +345,35 @@ def update_system_settings(
     )
 
 
-class UserRead(BaseModel):
-    id: int
-    username: str
-    email: Optional[str]
-    group: Optional[dict]
-    file_count: int
-    storage_bytes: int
-
-    class Config:
-        orm_mode = True
-
-
-class UserGroupUpdate(BaseModel):
-    group_id: int
-
-
+# --------------------------------------------------------------------- #
+#                                Users API                              #
+# --------------------------------------------------------------------- #
 @router.get("/users", response_model=List[UserRead])
 def list_users(
+    group_id: int | None = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    Optionally filter users by **group_id**.
+    """
     ensure_superadmin(current_user)
 
-    users = db.query(User).all()
+    q = db.query(User)
+    if group_id is not None:
+        q = q.filter(User.group_id == group_id)
+    users = q.all()
+
     rows: list[UserRead] = []
     for u in users:
-        count, total = db.query(
-            func.count(File.id),
-            func.coalesce(func.sum(File.size), 0),
-        ).filter(File.user_id == u.id).first()
+        count, total = (
+            db.query(
+                func.count(File.id),
+                func.coalesce(func.sum(File.size), 0),
+            )
+            .filter(File.user_id == u.id)
+            .first()
+        )
 
         rows.append(
             UserRead(
