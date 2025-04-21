@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, desc
 
 from app.dependencies.auth import get_current_user
 from app.db.database import get_db
@@ -18,23 +18,23 @@ router = APIRouter()
 
 
 def ensure_superadmin(user: User):
-    """Helper: only SUPER_ADMIN can access these endpoints."""
     if not user.group or user.group.name != "SUPER_ADMIN":
-        raise HTTPException(status_code=403, detail="Only SUPER_ADMIN can perform this action.")
+        raise HTTPException(status_code=403, detail="Only SUPER_ADMIN allowed")
 
 
+# ---------- Models ----------
 class GroupCreate(BaseModel):
     name: str
-    allowed_extensions: list[str] = ["jpg", "png", "gif"]
-    max_file_size: int = 10_000_000
+    allowed_extensions: Optional[List[str]] = None
+    max_file_size: Optional[int] = None
     max_storage_size: Optional[int] = None
 
 
 class GroupRead(BaseModel):
     id: int
     name: str
-    allowed_extensions: list[str]
-    max_file_size: int
+    allowed_extensions: List[str]
+    max_file_size: Optional[int]
     max_storage_size: Optional[int]
 
     class Config:
@@ -54,27 +54,20 @@ def list_groups(
     current_user: User = Depends(get_current_user),
 ):
     ensure_superadmin(current_user)
-
     groups = db.query(Group).all()
-    result = []
+    out: list[GroupRead] = []
     for g in groups:
-        if g.settings:
-            result.append(GroupRead(
+        sett = g.settings
+        out.append(
+            GroupRead(
                 id=g.id,
                 name=g.name,
-                allowed_extensions=g.settings.allowed_extensions,
-                max_file_size=g.settings.max_file_size,
-                max_storage_size=g.settings.max_storage_size
-            ))
-        else:
-            result.append(GroupRead(
-                id=g.id,
-                name=g.name,
-                allowed_extensions=[],
-                max_file_size=0,
-                max_storage_size=None
-            ))
-    return result
+                allowed_extensions=sett.allowed_extensions if sett else [],
+                max_file_size=sett.max_file_size if sett else None,
+                max_storage_size=sett.max_storage_size if sett else None,
+            )
+        )
+    return out
 
 
 @router.post("/groups", response_model=GroupRead)
@@ -85,28 +78,24 @@ def create_group(
 ):
     ensure_superadmin(current_user)
 
-    existing = db.query(Group).filter(Group.name == payload.name).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="Group name already exists.")
+    if db.query(Group).filter(Group.name == payload.name).first():
+        raise HTTPException(status_code=400, detail="Group exists")
 
-    new_group = Group(name=payload.name)
-    new_settings = GroupSettings(
-        allowed_extensions=payload.allowed_extensions,
-        max_file_size=payload.max_file_size,
+    grp = Group(name=payload.name)
+    sett = GroupSettings(
+        allowed_extensions=payload.allowed_extensions or [],
+        max_file_size=payload.max_file_size or 10_000_000,
         max_storage_size=payload.max_storage_size,
     )
-    new_group.settings = new_settings
-
-    db.add(new_group)
-    db.commit()
-    db.refresh(new_group)
+    grp.settings = sett
+    db.add(grp); db.commit(); db.refresh(grp); db.refresh(sett)
 
     return GroupRead(
-        id=new_group.id,
-        name=new_group.name,
-        allowed_extensions=new_settings.allowed_extensions,
-        max_file_size=new_settings.max_file_size,
-        max_storage_size=new_settings.max_storage_size
+        id=grp.id,
+        name=grp.name,
+        allowed_extensions=sett.allowed_extensions,
+        max_file_size=sett.max_file_size,
+        max_storage_size=sett.max_storage_size,
     )
 
 
@@ -168,28 +157,51 @@ def delete_group(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    • SUPER_ADMIN group cannot be deleted.
+    • At least one non‑admin group must remain.
+    • If the deleted group is the current default_user_group in SystemSettings,
+      automatically switch default_user_group_id to the newest remaining group.
+    """
     ensure_superadmin(current_user)
 
-    db_group = db.query(Group).filter(Group.id == group_id).first()
-    if not db_group:
-        raise HTTPException(status_code=404, detail="Group not found.")
+    grp: Group | None = db.query(Group).filter(Group.id == group_id).first()
+    if not grp:
+        raise HTTPException(status_code=404, detail="Group not found")
+    if grp.name == "SUPER_ADMIN":
+        raise HTTPException(status_code=400, detail="Cannot delete SUPER_ADMIN")
 
-    if db_group.name == "SUPER_ADMIN":
-        raise HTTPException(status_code=400, detail="Cannot delete the SUPER_ADMIN group.")
+    remaining = db.query(func.count(Group.id)).filter(
+        Group.id != group_id, Group.name != "SUPER_ADMIN"
+    ).scalar()
+    if remaining == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="At least one non‑admin group must remain",
+        )
 
-    # find user ids
-    users_in_group = db.query(User).filter(User.group_id == group_id).all()
-    user_ids = [u.id for u in users_in_group]
+    # if this group is default in system settings → pick fallback
+    settings = db.query(SystemSettings).first()
+    if settings and settings.default_user_group_id == group_id:
+        fallback = (
+            db.query(Group)
+            .filter(Group.id != group_id, Group.name != "SUPER_ADMIN")
+            .order_by(desc(Group.id))           # “last created” = highest id
+            .first()
+        )
+        settings.default_user_group_id = fallback.id if fallback else None
+        db.add(settings)
 
+    # cascade users and (optionally) files
+    user_ids = [u.id for u in grp.users]
     if delete_files and user_ids:
         db.query(File).filter(File.user_id.in_(user_ids)).delete(synchronize_session=False)
-
     db.query(User).filter(User.group_id == group_id).delete(synchronize_session=False)
 
-    db.delete(db_group)
+    db.delete(grp)
     db.commit()
 
-    return {"detail": f"Group '{db_group.name}' deleted. Users removed. Files_deleted={delete_files}"}
+    return {"detail": f"Group '{grp.name}' deleted"}
 
 
 class SystemSettingsRead(BaseModel):
