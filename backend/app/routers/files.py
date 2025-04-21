@@ -20,6 +20,7 @@ from app.db.database import get_db
 from app.db.models.file import File as FileModel
 from app.db.models.storage_enums import FileType, StorageType
 from app.db.models.user import User
+from app.db.models.system_settings import SystemSettings              # ★ NEW
 from app.dependencies.auth import get_current_user, get_optional_user
 
 # -----------------------------------------------------------------------------
@@ -114,7 +115,7 @@ def batch_delete_files(
 
 
 # -----------------------------------------------------------------------------
-# 2) upload single file (unchanged)
+# 2) upload single file
 # -----------------------------------------------------------------------------
 @router.post("/upload")
 def upload_file(
@@ -124,9 +125,22 @@ def upload_file(
     current_user: Optional[User] = Depends(get_optional_user),
 ):
     """
-    Accept a single file upload (guest *or* authenticated).
-    Anonymous uploads are attributed to the permanent **guest** account.
+    Accept a single file upload.
+
+    • If **SystemSettings.public_upload_enabled** is **False** and the caller
+      is **not authenticated**, we reject with 403.
+    • Anonymous uploads (when allowed) are attributed to the permanent “guest”
+      account.
     """
+    # ---------- public‑upload gate ----------------------------------
+    settings = db.query(SystemSettings).first()
+    if current_user is None:
+        if settings and not settings.public_upload_enabled:
+            raise HTTPException(
+                status_code=403,
+                detail="Public uploads are currently disabled.",
+            )
+
     if not file:
         raise HTTPException(status_code=400, detail="No file uploaded")
 
@@ -265,3 +279,4 @@ def download_file(
             )
         },
     )
+
