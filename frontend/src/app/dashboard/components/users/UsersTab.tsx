@@ -39,6 +39,9 @@ const usersAtom = atom<UserItem[]>([]);
 const groupsAtom = atom<GroupItem[]>([]);
 const hasFetchedAtom = atom(false);
 
+/* ---------- helpers ---------- */
+const EXCLUDE = ["SUPER_ADMIN", "GUEST"]; // ← filter out special groups
+
 export default function UsersTab() {
   const { data: session } = useSession();
   const { push } = useToast(); // ★ NEW
@@ -77,7 +80,7 @@ export default function UsersTab() {
       const userData: UserItem[] = await res.json();
       setUsers(userData);
 
-      /* 2) Groups  (filter out SUPER_ADMIN) */
+      /* 2) Groups  (filter out SUPER_ADMIN & GUEST) */
       res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/groups`, {
         headers: { Authorization: `Bearer ${session?.accessToken}` },
       });
@@ -88,7 +91,7 @@ export default function UsersTab() {
       const groupData: any[] = await res.json();
       setGroups(
         groupData
-          .filter((g) => g.name !== "SUPER_ADMIN")
+          .filter((g) => !EXCLUDE.includes(g.name))
           .map(({ id, name }) => ({ id, name }))
       );
     } catch (err: any) {
@@ -179,8 +182,8 @@ export default function UsersTab() {
           Users Management
         </h3>
         <p className="text-sm text-theme-500 dark:text-theme-400 mb-4">
-          View all accounts, change groups (except SUPER_ADMIN), or remove
-          users.
+          View all accounts, change groups (except SUPER_ADMIN & GUEST), or
+          remove users.
         </p>
 
         {errorMsg && (

@@ -15,7 +15,7 @@ import { FiX } from "react-icons/fi";
 import { cn } from "@/utils/cn";
 import { ByteValueTooltip } from "./ByteValueTooltip";
 import { useToast } from "@/providers/toast-provider";
-import ViewUserFilesDialog from "../users/ViewUserFilesDialog";     // ★ NEW ★
+import ViewUserFilesDialog from "../users/ViewUserFilesDialog";
 
 /* ---------- types ---------- */
 interface GroupInfo {
@@ -45,28 +45,32 @@ export default function ViewUsersDialog({
   const { push } = useToast();
 
   /* ---------------- local atoms ---------------- */
-  const openA    = useMemo(() => atom(false), []);
+  const openA = useMemo(() => atom(false), []);
   const loadingA = useMemo(() => atom(false), []);
-  const errorA   = useMemo(() => atom(""), []);
-  const usersA   = useMemo(() => atom<UserItem[]>([]), []);
-  const groupsA  = useMemo(() => atom<{ id: number; name: string }[]>([]), []);
+  const errorA = useMemo(() => atom(""), []);
+  const usersA = useMemo(() => atom<UserItem[]>([]), []);
+  const groupsA = useMemo(() => atom<{ id: number; name: string }[]>([]), []);
 
-  const [open, setOpen]     = useAtom(openA);
-  const [loading, setLoad]  = useAtom(loadingA);
-  const [error, setError]   = useAtom(errorA);
-  const [users, setUsers]   = useAtom(usersA);
+  const [open, setOpen] = useAtom(openA);
+  const [loading, setLoad] = useAtom(loadingA);
+  const [error, setError] = useAtom(errorA);
+  const [users, setUsers] = useAtom(usersA);
   const [groups, setGroups] = useAtom(groupsA);
 
   /* ------------ fetch each open ------------ */
-  useEffect(() => { if (open) fetchAll(); }, [open]);
+  useEffect(() => {
+    if (open) fetchAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   async function fetchAll() {
-    setLoad(true); setError("");
+    setLoad(true);
+    setError("");
     try {
       /* users */
       const uRes = await fetch(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/users`,
-        { headers: { Authorization: `Bearer ${sessionToken}` } },
+        { headers: { Authorization: `Bearer ${sessionToken}` } }
       );
       if (!uRes.ok) throw new Error("Failed to fetch users");
       const all: UserItem[] = await uRes.json();
@@ -75,18 +79,20 @@ export default function ViewUsersDialog({
       /* groups (for move‑to select) */
       const gRes = await fetch(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/groups`,
-        { headers: { Authorization: `Bearer ${sessionToken}` } },
+        { headers: { Authorization: `Bearer ${sessionToken}` } }
       );
       if (!gRes.ok) throw new Error("Failed to fetch groups");
       const list: any[] = await gRes.json();
       setGroups(
         list
-          .filter((g) => g.name !== "SUPER_ADMIN")
-          .map(({ id, name }) => ({ id, name })),
+          .filter((g) => !["SUPER_ADMIN", "GUEST"].includes(g.name))
+          .map(({ id, name }) => ({ id, name }))
       );
     } catch (e: any) {
       setError(e.message);
-    } finally { setLoad(false); }
+    } finally {
+      setLoad(false);
+    }
   }
 
   /* ------------ helpers ------------ */
@@ -94,18 +100,19 @@ export default function ViewUsersDialog({
 
   async function moveUser(userId: number, newGroupId: number) {
     if (newGroupId === group.id) return;
-    setLoad(true); setError("");
+    setLoad(true);
+    setError("");
     try {
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/users/${userId}/group`,
         {
-          method : "PUT",
+          method: "PUT",
           headers: {
             "Content-Type": "application/json",
-            Authorization : `Bearer ${sessionToken}`,
+            Authorization: `Bearer ${sessionToken}`,
           },
           body: JSON.stringify({ group_id: newGroupId }),
-        },
+        }
       );
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
@@ -113,22 +120,25 @@ export default function ViewUsersDialog({
       }
       setUsers((p) => p.filter((u) => u.id !== userId));
       push({ title: "User moved", variant: "success" });
-      onChanged();               // update group stats in parent
+      onChanged(); // update group stats in parent
     } catch (e: any) {
       setError(e.message || "Move error");
       push({ title: "Move failed", variant: "error" });
-    } finally { setLoad(false); }
+    } finally {
+      setLoad(false);
+    }
   }
 
   async function deleteUser(userId: number, deleteFiles: boolean) {
     if (!confirm("Delete this user?")) return;
-    setLoad(true); setError("");
+    setLoad(true);
+    setError("");
     try {
       const url =
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/users/${userId}` +
         `?delete_files=${deleteFiles}`;
       const res = await fetch(url, {
-        method : "DELETE",
+        method: "DELETE",
         headers: { Authorization: `Bearer ${sessionToken}` },
       });
       if (!res.ok) {
@@ -141,7 +151,9 @@ export default function ViewUsersDialog({
     } catch (e: any) {
       setError(e.message || "Delete error");
       push({ title: "Delete failed", variant: "error" });
-    } finally { setLoad(false); }
+    } finally {
+      setLoad(false);
+    }
   }
 
   /* ---------------- UI ---------------- */
@@ -159,7 +171,7 @@ export default function ViewUsersDialog({
           className={cn(
             "fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2",
             "bg-theme-50 dark:bg-theme-900 rounded-xl shadow-xl",
-            "w-[92vw] max-w-3xl max-h-[85vh] overflow-y-auto p-6",
+            "w-[92vw] max-w-3xl max-h-[85vh] overflow-y-auto p-6"
           )}
         >
           <div className="flex items-center justify-between mb-4">
@@ -192,7 +204,7 @@ export default function ViewUsersDialog({
                     className={cn(
                       "p-4 rounded-lg border bg-theme-50/20 dark:bg-theme-900/20",
                       "border-theme-200/50 dark:border-theme-800/50",
-                      "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4",
+                      "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
                     )}
                   >
                     <div className="space-y-1 flex-1">
@@ -230,7 +242,7 @@ export default function ViewUsersDialog({
                           <Select.Trigger
                             className={cn(
                               "inline-flex items-center justify-between min-w-[7rem] px-3 py-1.5 rounded border",
-                              "border-theme-200 dark:border-theme-700 bg-theme-50 dark:bg-theme-800 text-sm",
+                              "border-theme-200 dark:border-theme-700 bg-theme-50 dark:bg-theme-800 text-sm"
                             )}
                           >
                             <Select.Value />
@@ -244,7 +256,7 @@ export default function ViewUsersDialog({
                               side="bottom"
                               className={cn(
                                 "overflow-hidden rounded-lg shadow-lg z-[60]",
-                                "bg-theme-50 dark:bg-theme-900 border border-theme-200 dark:border-theme-700",
+                                "bg-theme-50 dark:bg-theme-900 border border-theme-200 dark:border-theme-700"
                               )}
                             >
                               <Select.ScrollUpButton className="flex items-center justify-center py-1">
@@ -258,7 +270,7 @@ export default function ViewUsersDialog({
                                     value={g.id.toString()}
                                     className={cn(
                                       "flex items-center px-3 py-2 text-sm cursor-pointer",
-                                      "radix-state-checked:bg-theme-200 dark:radix-state-checked:bg-theme-700",
+                                      "radix-state-checked:bg-theme-200 dark:radix-state-checked:bg-theme-700"
                                     )}
                                   >
                                     <Select.ItemText>{g.name}</Select.ItemText>

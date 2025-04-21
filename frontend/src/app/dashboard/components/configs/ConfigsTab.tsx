@@ -20,10 +20,10 @@ interface SystemSettingsData {
 }
 
 /* ---------- atoms ---------- */
-const loadingAtom   = atom(false);
-const errorAtom     = atom("");
-const groupsAtom    = atom<GroupItem[]>([]);
-const configAtom    = atom<SystemSettingsData>({
+const loadingAtom = atom(false);
+const errorAtom = atom("");
+const groupsAtom = atom<GroupItem[]>([]);
+const configAtom = atom<SystemSettingsData>({
   registration_enabled: true,
   public_upload_enabled: false,
   default_user_group_id: null,
@@ -34,9 +34,9 @@ export default function ConfigsTab() {
   const { push } = useToast();
 
   const [loading, setLoading] = useAtom(loadingAtom);
-  const [errorMsg, setError]  = useAtom(errorAtom);
-  const [groups, setGroups]   = useAtom(groupsAtom);
-  const [config, setConfig]   = useAtom(configAtom);
+  const [errorMsg, setError] = useAtom(errorAtom);
+  const [groups, setGroups] = useAtom(groupsAtom);
+  const [config, setConfig] = useAtom(configAtom);
 
   /* ------------ (re)fetch every time tab is opened ------------- */
   useEffect(() => {
@@ -46,7 +46,8 @@ export default function ConfigsTab() {
   }, [session?.accessToken]);
 
   async function fetchConfigAndGroups() {
-    setLoading(true); setError("");
+    setLoading(true);
+    setError("");
     try {
       /* system settings */
       const sRes = await fetch(
@@ -64,7 +65,7 @@ export default function ConfigsTab() {
       if (!gRes.ok) throw new Error("Failed to fetch groups");
       const list: any[] = await gRes.json();
       const normal = list
-        .filter((g) => g.name !== "SUPER_ADMIN")
+        .filter((g) => !["SUPER_ADMIN", "GUEST"].includes(g.name))
         .map(({ id, name }) => ({ id, name }));
       setGroups(normal);
 
@@ -77,19 +78,22 @@ export default function ConfigsTab() {
       }
     } catch (e: any) {
       setError(e.message || "Load error");
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
   }
 
   /* ------------ handlers ------------ */
-  const toggleReg   = (e: React.ChangeEvent<HTMLInputElement>) =>
+  const toggleReg = (e: React.ChangeEvent<HTMLInputElement>) =>
     setConfig((p) => ({ ...p, registration_enabled: e.target.checked }));
-  const togglePub   = (e: React.ChangeEvent<HTMLInputElement>) =>
+  const togglePub = (e: React.ChangeEvent<HTMLInputElement>) =>
     setConfig((p) => ({ ...p, public_upload_enabled: e.target.checked }));
   const changeGroup = (v: string) =>
     setConfig((p) => ({ ...p, default_user_group_id: +v }));
 
   async function save() {
-    setLoading(true); setError("");
+    setLoading(true);
+    setError("");
     try {
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/system-settings`,
@@ -108,15 +112,19 @@ export default function ConfigsTab() {
     } catch (e: any) {
       setError(e.message || "Save error");
       push({ title: "Save failed", variant: "error" });
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
   }
 
   /* ------------ UI ------------ */
   return (
-    <div className={cn(
-      "p-4 bg-theme-100/25 dark:bg-theme-900/25 rounded-lg",
-      "border border-theme-200/50 dark:border-theme-800/50"
-    )}>
+    <div
+      className={cn(
+        "p-4 bg-theme-100/25 dark:bg-theme-900/25 rounded-lg",
+        "border border-theme-200/50 dark:border-theme-800/50"
+      )}
+    >
       <h3 className="text-lg font-medium mb-2">Site Configurations</h3>
       {errorMsg && (
         <p className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 mb-4 rounded">
@@ -126,12 +134,16 @@ export default function ConfigsTab() {
 
       <div className="space-y-4 mb-6">
         {/* toggles */}
-        <Toggle label="Registration Enabled"
-                checked={config.registration_enabled}
-                onChange={toggleReg} />
-        <Toggle label="Public Upload Enabled"
-                checked={config.public_upload_enabled}
-                onChange={togglePub} />
+        <Toggle
+          label="Registration Enabled"
+          checked={config.registration_enabled}
+          onChange={toggleReg}
+        />
+        <Toggle
+          label="Public Upload Enabled"
+          checked={config.public_upload_enabled}
+          onChange={togglePub}
+        />
 
         {/* default group */}
         {groups.length === 0 ? (
@@ -147,30 +159,40 @@ export default function ConfigsTab() {
               value={(config.default_user_group_id ?? groups[0].id).toString()}
               onValueChange={changeGroup}
             >
-              <Select.Trigger className={cn(
-                "inline-flex items-center justify-between w-full px-3 py-2 rounded border",
-                "border-theme-200 dark:border-theme-700 bg-theme-50 dark:bg-theme-800"
-              )}>
+              <Select.Trigger
+                className={cn(
+                  "inline-flex items-center justify-between w-full px-3 py-2 rounded border",
+                  "border-theme-200 dark:border-theme-700 bg-theme-50 dark:bg-theme-800"
+                )}
+              >
                 <Select.Value />
-                <Select.Icon><BiChevronDown className="h-4 w-4" /></Select.Icon>
+                <Select.Icon>
+                  <BiChevronDown className="h-4 w-4" />
+                </Select.Icon>
               </Select.Trigger>
 
               <Select.Portal>
-                <Select.Content side="bottom" className={cn(
-                  "overflow-hidden rounded-lg shadow-lg z-50 bg-theme-50 dark:bg-theme-900",
-                  "border border-theme-200 dark:border-theme-700"
-                )}>
+                <Select.Content
+                  side="bottom"
+                  className={cn(
+                    "overflow-hidden rounded-lg shadow-lg z-50 bg-theme-50 dark:bg-theme-900",
+                    "border border-theme-200 dark:border-theme-700"
+                  )}
+                >
                   <Select.ScrollUpButton className="flex items-center justify-center py-1">
                     <BiChevronUp />
                   </Select.ScrollUpButton>
 
                   <Select.Viewport className="max-h-60">
                     {groups.map((g) => (
-                      <Select.Item key={g.id} value={g.id.toString()}
+                      <Select.Item
+                        key={g.id}
+                        value={g.id.toString()}
                         className={cn(
                           "flex items-center px-3 py-2 text-sm cursor-pointer",
                           "radix-state-checked:bg-theme-200 dark:radix-state-checked:bg-theme-700"
-                        )}>
+                        )}
+                      >
                         <Select.ItemText>{g.name}</Select.ItemText>
                         <Select.ItemIndicator className="ml-auto">
                           <BiCheck />
@@ -189,8 +211,11 @@ export default function ConfigsTab() {
         )}
       </div>
 
-      <button disabled={loading} onClick={save}
-              className="px-4 py-2 rounded bg-theme-500 text-white hover:bg-theme-600 disabled:bg-theme-300">
+      <button
+        disabled={loading}
+        onClick={save}
+        className="px-4 py-2 rounded bg-theme-500 text-white hover:bg-theme-600 disabled:bg-theme-300"
+      >
         {loading ? "Saving…" : "Save Changes"}
       </button>
     </div>
@@ -212,8 +237,12 @@ function Toggle({
       <label className="text-sm font-medium text-theme-700 dark:text-theme-300">
         {label}
       </label>
-      <input type="checkbox" checked={checked} onChange={onChange}
-             className="h-4 w-4 cursor-pointer" />
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onChange}
+        className="h-4 w-4 cursor-pointer"
+      />
     </div>
   );
 }
