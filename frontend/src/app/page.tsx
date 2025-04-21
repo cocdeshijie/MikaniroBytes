@@ -23,6 +23,23 @@ const pendingCountAtom = atom((get) =>
 );
 
 /* ------------------------------------------------------------------ */
+/*                            HELPERS                                 */
+/* ------------------------------------------------------------------ */
+/**
+ * Try to turn FastAPI error JSON (or plain text) into a nice message.
+ */
+function parseUploadError(raw: string | null): string {
+  if (!raw) return "Upload failed";
+  try {
+    const data = JSON.parse(raw);
+    if (data && typeof data.detail === "string") return data.detail;
+    return raw;
+  } catch {
+    return raw;
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /*                             COMPONENT                              */
 /* ------------------------------------------------------------------ */
 
@@ -116,7 +133,7 @@ export default function Home() {
         setUploadedItems((prev) => [result, ...prev]);
         setNeedsRefresh(true);
       } else {
-        fail(xhr.responseText || "Upload failed");
+        fail(parseUploadError(xhr.responseText));
       }
     };
 
@@ -128,7 +145,7 @@ export default function Home() {
           t.id === task.id ? { ...t, status: "error", error: msg } : t
         )
       );
-      push({ title: "Upload error", variant: "error" });
+      push({ title: "Upload failed", description: msg, variant: "error" });
     };
 
     const formData = new FormData();
