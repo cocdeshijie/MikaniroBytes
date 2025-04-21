@@ -10,6 +10,7 @@ import AddGroupDialog from "./AddGroupDialog";
 import EditGroupDialog from "./EditGroupDialog";
 import ConfirmDeleteGroupDialog from "./ConfirmDeleteGroupDialog";
 import ViewUsersDialog from "./ViewUsersDialog";
+import ViewGroupFilesDialog from "./ViewGroupFilesDialog";           // ★ NEW
 import type { GroupItem } from "@/types/sharedTypes";
 
 /* ---------- atoms ---------- */
@@ -47,12 +48,10 @@ export default function GroupsTab() {
     } finally { setLoad(false); }
   }
 
-  /* -------- local mutators (no refetch needed) -------- */
+  /* -------- local mutators -------- */
   const add = (g: GroupItem) => setGroups((p) => [...p, g]);
-  const upd = (g: GroupItem) =>
-    setGroups((p) => p.map((r) => (r.id === g.id ? g : r)));
-  const del = (id: number)   =>
-    setGroups((p) => p.filter((g) => g.id !== id));
+  const upd = (g: GroupItem) => setGroups((p) => p.map((r) => (r.id === g.id ? g : r)));
+  const del = (id: number)   => setGroups((p) => p.filter((g) => g.id !== id));
 
   /* -------- derived -------- */
   const normal      = groups.filter((g) => g.name !== "SUPER_ADMIN");
@@ -105,11 +104,20 @@ export default function GroupsTab() {
                     <div className="flex items-center justify-between gap-2 mb-2">
                       <p className="font-medium">{g.name}</p>
                       <div className="flex items-center gap-2">
+                        {/* ★ NEW – open dialog to browse all files in group */}
+                        <ViewGroupFilesDialog
+                          groupId={g.id}
+                          groupName={g.name}
+                          sessionToken={session?.accessToken || ""}
+                        />
+
+                        {/* existing – view users list */}
                         <ViewUsersDialog
                           group={g}
                           sessionToken={session?.accessToken || ""}
                           onChanged={fetchGroups}
                         />
+
                         <EditGroupDialog
                           group={g}
                           sessionToken={session?.accessToken || ""}
@@ -146,7 +154,7 @@ export default function GroupsTab() {
                         : <ByteValueTooltip bytes={g.max_storage_size} />}
                     </p>
                     <p className="text-sm text-theme-600 dark:text-theme-400 mt-0.5">
-                      Stored:&nbsp;{g.file_count} files –&nbsp;
+                      Stored:&nbsp;{g.file_count} files –&nbsp;
                       <ByteValueTooltip bytes={g.storage_bytes} />
                     </p>
                   </li>
@@ -159,3 +167,4 @@ export default function GroupsTab() {
     </div>
   );
 }
+
