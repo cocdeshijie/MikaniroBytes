@@ -24,7 +24,7 @@ import {
 } from "@/atoms/uploadAtoms";
 import { filesNeedsRefreshAtom } from "@/atoms/fileAtoms";
 import { cn } from "@/utils/cn";
-import { useToast } from "@/providers/toast-provider"; // ★ NEW
+import { useToast } from "@/providers/toast-provider";
 
 /* ------------------------------------------------------------------ */
 /*                      helper: copy‑to‑clipboard                      */
@@ -421,11 +421,6 @@ export default function Home() {
             />
           </svg>
         </Link>
-      </div>
-
-      {/* Features section (anchor = #features) */}
-      <div id="features" className="bg-white dark:bg-theme-900 py-16 px-6">
-        {/* … feature cards unchanged … */}
       </div>
 
       {/* Footer */}
