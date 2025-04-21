@@ -51,7 +51,6 @@ export default function ViewGroupFilesDialog({
 
           <FileViewer
             fetchEndpoint={`${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/groups/${groupId}/files`}
-            deleteEndpoint={`${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/files/batch-delete`}
             sessionToken={sessionToken}
             readOnly={false}
           />
