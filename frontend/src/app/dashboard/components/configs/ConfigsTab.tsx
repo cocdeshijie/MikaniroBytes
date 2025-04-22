@@ -1,14 +1,20 @@
 "use client";
 
+/* ------------------------------------------------------------------ */
+/*                               IMPORTS                              */
+/* ------------------------------------------------------------------ */
 import { useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { atom, useAtom } from "jotai";
-import * as Select from "@radix-ui/react-select";
+import * as Select   from "@radix-ui/react-select";
+import * as Checkbox from "@radix-ui/react-checkbox";
 import { BiChevronDown, BiChevronUp, BiCheck } from "react-icons/bi";
 import { cn } from "@/utils/cn";
 import { useToast } from "@/providers/toast-provider";
 
-/* ---------- types ---------- */
+/* ------------------------------------------------------------------ */
+/*                               TYPES                                */
+/* ------------------------------------------------------------------ */
 interface GroupItem {
   id: number;
   name: string;
@@ -19,26 +25,29 @@ interface SystemSettingsData {
   default_user_group_id: number | null;
 }
 
-/* ---------- atoms ---------- */
+/* ------------------------------------------------------------------ */
+/*                               ATOMS                                */
+/* ------------------------------------------------------------------ */
 const loadingAtom = atom(false);
-const errorAtom = atom("");
-const groupsAtom = atom<GroupItem[]>([]);
-const configAtom = atom<SystemSettingsData>({
-  registration_enabled: true,
+const errorAtom   = atom("");
+const groupsAtom  = atom<GroupItem[]>([]);
+const configAtom  = atom<SystemSettingsData>({
+  registration_enabled : true,
   public_upload_enabled: false,
   default_user_group_id: null,
 });
 
+/* ================================================================== */
 export default function ConfigsTab() {
   const { data: session } = useSession();
-  const { push } = useToast();
+  const { push }          = useToast();
 
   const [loading, setLoading] = useAtom(loadingAtom);
-  const [errorMsg, setError] = useAtom(errorAtom);
-  const [groups, setGroups] = useAtom(groupsAtom);
-  const [config, setConfig] = useAtom(configAtom);
+  const [errorMsg, setError]  = useAtom(errorAtom);
+  const [groups, setGroups]   = useAtom(groupsAtom);
+  const [config, setConfig]   = useAtom(configAtom);
 
-  /* ------------ (re)fetch every time tab is opened ------------- */
+  /* ---------------- fetch on mount / token change ---------------- */
   useEffect(() => {
     if (!session?.accessToken) return;
     fetchConfigAndGroups();
@@ -57,7 +66,7 @@ export default function ConfigsTab() {
       if (!sRes.ok) throw new Error("Failed to fetch settings");
       setConfig(await sRes.json());
 
-      /* groups list */
+      /* groups */
       const gRes = await fetch(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/groups`,
         { headers: { Authorization: `Bearer ${session?.accessToken}` } }
@@ -83,11 +92,11 @@ export default function ConfigsTab() {
     }
   }
 
-  /* ------------ handlers ------------ */
-  const toggleReg = (e: React.ChangeEvent<HTMLInputElement>) =>
-    setConfig((p) => ({ ...p, registration_enabled: e.target.checked }));
-  const togglePub = (e: React.ChangeEvent<HTMLInputElement>) =>
-    setConfig((p) => ({ ...p, public_upload_enabled: e.target.checked }));
+  /* ---------------- handlers ---------------- */
+  const toggleReg = (v: boolean) =>
+    setConfig((p) => ({ ...p, registration_enabled: v }));
+  const togglePub = (v: boolean) =>
+    setConfig((p) => ({ ...p, public_upload_enabled: v }));
   const changeGroup = (v: string) =>
     setConfig((p) => ({ ...p, default_user_group_id: +v }));
 
@@ -98,10 +107,10 @@ export default function ConfigsTab() {
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/system-settings`,
         {
-          method: "PUT",
+          method : "PUT",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${session?.accessToken}`,
+            Authorization : `Bearer ${session?.accessToken}`,
           },
           body: JSON.stringify(config),
         }
@@ -117,7 +126,9 @@ export default function ConfigsTab() {
     }
   }
 
-  /* ------------ UI ------------ */
+  /* ================================================================= */
+  /*                                UI                                 */
+  /* ================================================================= */
   return (
     <div
       className={cn(
@@ -126,6 +137,7 @@ export default function ConfigsTab() {
       )}
     >
       <h3 className="text-lg font-medium mb-2">Site Configurations</h3>
+
       {errorMsg && (
         <p className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 mb-4 rounded">
           {errorMsg}
@@ -222,7 +234,10 @@ export default function ConfigsTab() {
   );
 }
 
-/* small helpers ---------------------------------------------------- */
+/* ------------------------------------------------------------------ */
+/*                              TOGGLE                                */
+/* ------------------------------------------------------------------ */
+/** Radix‑checkbox based toggle used for boolean site config options */
 function Toggle({
   label,
   checked,
@@ -230,19 +245,30 @@ function Toggle({
 }: {
   label: string;
   checked: boolean;
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onChange: (val: boolean) => void;
 }) {
   return (
-    <div className="flex items-center space-x-3">
+    <div className="flex items-center gap-3">
       <label className="text-sm font-medium text-theme-700 dark:text-theme-300">
         {label}
       </label>
-      <input
-        type="checkbox"
+
+      {/* Radix checkbox */}
+      <Checkbox.Root
         checked={checked}
-        onChange={onChange}
-        className="h-4 w-4 cursor-pointer"
-      />
+        onCheckedChange={(v) => onChange(!!v)}
+        className={cn(
+          "h-5 w-5 shrink-0 rounded border",
+          "border-theme-400 dark:border-theme-600 bg-white dark:bg-theme-800",
+          "flex items-center justify-center",
+          "data-[state=checked]:bg-theme-500",
+          "cursor-pointer"
+        )}
+      >
+        <Checkbox.Indicator>
+          <BiCheck className="h-4 w-4 text-white" />
+        </Checkbox.Indicator>
+      </Checkbox.Root>
     </div>
   );
 }

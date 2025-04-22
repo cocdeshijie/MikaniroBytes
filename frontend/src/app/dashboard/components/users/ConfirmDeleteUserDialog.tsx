@@ -2,10 +2,15 @@
 
 import { useState } from "react";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
+import * as Checkbox     from "@radix-ui/react-checkbox";
 import { cn } from "@/utils/cn";
 import { useToast } from "@/providers/toast-provider";
 import { FiTrash } from "react-icons/fi";
+import { BiCheck } from "react-icons/bi";
 
+/* ------------------------------------------------------------------ */
+/*                           local type                               */
+/* ------------------------------------------------------------------ */
 interface UserItem {
   id: number;
   username: string;
@@ -21,10 +26,12 @@ export default function ConfirmDeleteUserDialog({
   afterDelete: (userId: number) => void;
 }) {
   const { push } = useToast();
-  const [open, setOpen] = useState(false);
-  const [deleteFiles, setDeleteFiles] = useState(false);
-  const [loading, setLoading] = useState(false);
 
+  const [open, setOpen]         = useState(false);
+  const [deleteFiles, setFiles] = useState(false);
+  const [loading, setLoading]   = useState(false);
+
+  /* ---------------- confirm handler ---------------- */
   async function confirm() {
     setLoading(true);
     try {
@@ -32,8 +39,8 @@ export default function ConfirmDeleteUserDialog({
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/users/${user.id}` +
         `?delete_files=${deleteFiles}`;
       const res = await fetch(url, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${sessionToken}` },
+        method  : "DELETE",
+        headers : { Authorization: `Bearer ${sessionToken}` },
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
@@ -49,6 +56,7 @@ export default function ConfirmDeleteUserDialog({
     }
   }
 
+  /* ----------------------------- UI ------------------------------ */
   return (
     <AlertDialog.Root open={open} onOpenChange={setOpen}>
       <AlertDialog.Trigger asChild>
@@ -75,17 +83,31 @@ export default function ConfirmDeleteUserDialog({
             This action cannot be undone.
           </AlertDialog.Description>
 
-          <label className="flex items-center gap-2 mb-4 text-sm">
-            <input
-              type="checkbox"
+          {/* -------- Radix checkbox replaces plain <input> -------- */}
+          <div className="flex items-center gap-2 mb-4">
+            <Checkbox.Root
+              id={`del_user_${user.id}`}
               checked={deleteFiles}
-              onChange={(e) => setDeleteFiles(e.target.checked)}
-              className="cursor-pointer"
-            />
-            <span className="text-theme-700 dark:text-theme-200">
+              onCheckedChange={(v) => setFiles(!!v)}
+              className={cn(
+                "h-4 w-4 shrink-0 rounded border",
+                "border-theme-400 dark:border-theme-600 bg-white dark:bg-theme-800",
+                "flex items-center justify-center",
+                "data-[state=checked]:bg-theme-500"
+              )}
+            >
+              <Checkbox.Indicator>
+                <BiCheck className="h-3 w-3 text-white" />
+              </Checkbox.Indicator>
+            </Checkbox.Root>
+
+            <label
+              htmlFor={`del_user_${user.id}`}
+              className="text-sm text-theme-700 dark:text-theme-200 cursor-pointer"
+            >
               Also delete all uploaded files
-            </span>
-          </label>
+            </label>
+          </div>
 
           <div className="flex justify-end gap-2">
             <AlertDialog.Cancel asChild>
