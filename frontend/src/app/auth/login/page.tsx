@@ -4,23 +4,31 @@ import { FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { signIn, useSession } from "next-auth/react";
 import { useAtom, atom } from "jotai";
+import * as Form from "@radix-ui/react-form";
 import { cn } from "@/utils/cn";
 import { useToast } from "@/providers/toast-provider";
 
+/* ------------------------------------------------------------------ */
+/*                               ATOMS                                */
+/* ------------------------------------------------------------------ */
 const usernameAtom = atom("");
 const passwordAtom = atom("");
 
+/* ------------------------------------------------------------------ */
+/*                               PAGE                                 */
+/* ------------------------------------------------------------------ */
 /**
- * Login Page using Radix Toast for feedback.
+ * Login Page — now built with @radix-ui/react-form.
  */
 export default function LoginPage() {
-  const router = useRouter();
-  const { data: session } = useSession();
-  const { push } = useToast();
+  const router               = useRouter();
+  const { data: session }    = useSession();
+  const { push }             = useToast();
 
-  const [username, setUsername] = useAtom(usernameAtom);
-  const [password, setPassword] = useAtom(passwordAtom);
+  const [username, setUser]  = useAtom(usernameAtom);
+  const [password, setPass]  = useAtom(passwordAtom);
 
+  /* ----------------------------- submit --------------------------- */
   async function handleLogin(e: FormEvent) {
     e.preventDefault();
 
@@ -51,6 +59,7 @@ export default function LoginPage() {
     }
   }
 
+  /* ----------------------------- UI ------------------------------- */
   return (
     <div
       className={cn(
@@ -76,7 +85,8 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <form
+        {/* ---------------- Radix Form ---------------- */}
+        <Form.Root
           onSubmit={handleLogin}
           className={cn(
             "bg-white dark:bg-theme-900",
@@ -84,84 +94,85 @@ export default function LoginPage() {
             "shadow-sm hover:shadow-md transition-all duration-300"
           )}
         >
-          {/* Form */}
-          <div className="p-8">
-            <div className="mb-6">
-              <label
-                htmlFor="username"
-                className="block mb-2 text-sm font-medium text-theme-500"
-              >
+          <div className="p-8 space-y-6">
+            {/* ------------ Username ------------ */}
+            <Form.Field name="username">
+              <Form.Label className="block mb-2 text-sm font-medium text-theme-500">
                 Username
-              </label>
-              <input
-                id="username"
-                className={cn(
-                  "w-full px-4 py-3 rounded-lg",
-                  "bg-theme-50 dark:bg-theme-800",
-                  "border border-theme-200 dark:border-theme-700",
-                  "focus:border-theme-500 focus:outline-none",
-                  "transition-colors duration-200",
-                  "text-theme-900 dark:text-theme-100"
-                )}
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter your username"
-                required
-              />
-            </div>
+              </Form.Label>
+              <Form.Control asChild>
+                <input
+                  id="username"
+                  required
+                  className={cn(
+                    "w-full px-4 py-3 rounded-lg",
+                    "bg-theme-50 dark:bg-theme-800",
+                    "border border-theme-200 dark:border-theme-700",
+                    "focus:border-theme-500 focus:outline-none",
+                    "transition-colors duration-200",
+                    "text-theme-900 dark:text-theme-100"
+                  )}
+                  value={username}
+                  onChange={(e) => setUser(e.target.value)}
+                  placeholder="Enter your username"
+                />
+              </Form.Control>
+            </Form.Field>
 
-            <div className="mb-8">
+            {/* ------------ Password ------------ */}
+            <Form.Field name="password">
               <div className="flex items-center justify-between mb-2">
-                <label
-                  htmlFor="password"
-                  className="text-sm font-medium text-theme-500"
-                >
+                <Form.Label className="text-sm font-medium text-theme-500">
                   Password
-                </label>
-                <a href="#" className="text-xs text-theme-500 hover:text-theme-600">
-                  Forgot password?
-                </a>
+                </Form.Label>
               </div>
-              <input
-                id="password"
-                type="password"
-                className={cn(
-                  "w-full px-4 py-3 rounded-lg",
-                  "bg-theme-50 dark:bg-theme-800",
-                  "border border-theme-200 dark:border-theme-700",
-                  "focus:border-theme-500 focus:outline-none",
-                  "transition-colors duration-200",
-                  "text-theme-900 dark:text-theme-100"
-                )}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
-                required
-              />
-            </div>
+              <Form.Control asChild>
+                <input
+                  id="password"
+                  type="password"
+                  required
+                  className={cn(
+                    "w-full px-4 py-3 rounded-lg",
+                    "bg-theme-50 dark:bg-theme-800",
+                    "border border-theme-200 dark:border-theme-700",
+                    "focus:border-theme-500 focus:outline-none",
+                    "transition-colors duration-200",
+                    "text-theme-900 dark:text-theme-100"
+                  )}
+                  value={password}
+                  onChange={(e) => setPass(e.target.value)}
+                  placeholder="Enter your password"
+                />
+              </Form.Control>
+            </Form.Field>
 
-            <button
-              type="submit"
-              className={cn(
-                "w-full py-3 px-6 rounded-lg mt-4",
-                "bg-theme-500 hover:bg-theme-600 active:bg-theme-700",
-                "text-white font-medium",
-                "transition-all duration-200",
-                "flex items-center justify-center gap-2"
-              )}
-            >
-              <span>Sign In</span>
-              <div className="w-1 h-4 bg-white/50 rounded-full"></div>
-            </button>
+            {/* ------------ Submit ------------ */}
+            <Form.Submit asChild>
+              <button
+                type="submit"
+                className={cn(
+                  "w-full py-3 px-6 rounded-lg mt-2",
+                  "bg-theme-500 hover:bg-theme-600 active:bg-theme-700",
+                  "text-white font-medium",
+                  "transition-all duration-200",
+                  "flex items-center justify-center gap-2"
+                )}
+              >
+                Sign In
+              </button>
+            </Form.Submit>
 
             <div className="mt-6 text-center text-sm text-theme-600 dark:text-theme-400">
               New user?{" "}
-              <a href="/auth/register" className="text-theme-500 hover:underline">
+              <a
+                href="/auth/register"
+                className="text-theme-500 hover:underline"
+              >
                 Create an account
               </a>
             </div>
           </div>
-        </form>
+        </Form.Root>
       </div>
     </div>
   );

@@ -1,30 +1,37 @@
 "use client";
 
+/* ------------------------------------------------------------------ */
+/*                               IMPORTS                              */
+/* ------------------------------------------------------------------ */
 import { FormEvent, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { useAtom, atom } from "jotai";
+import * as Form from "@radix-ui/react-form";               // ← NEW
 import { cn } from "@/utils/cn";
 
 /* ------------------------------------------------------------------ */
-/*                       local Jotai atoms                            */
+/*                               ATOMS                                */
 /* ------------------------------------------------------------------ */
-const usernameA = atom("");
-const emailA    = atom("");
-const passwordA = atom("");
-const errorA    = atom("");
-const enabledA  = atom<null | boolean>(null);     // null = loading
+const usernameA  = atom("");
+const emailA     = atom("");
+const passwordA  = atom("");
+const errorA     = atom("");
+const enabledA   = atom<null | boolean>(null);  // null = loading
 
+/* ------------------------------------------------------------------ */
+/*                               PAGE                                 */
+/* ------------------------------------------------------------------ */
 export default function RegisterPage() {
-  const router = useRouter();
+  const router                       = useRouter();
 
-  const [username, setUsername] = useAtom(usernameA);
-  const [email, setEmail]       = useAtom(emailA);
-  const [password, setPassword] = useAtom(passwordA);
-  const [errorMsg, setError]    = useAtom(errorA);
-  const [enabled, setEnabled]   = useAtom(enabledA);
+  const [username, setUsername]      = useAtom(usernameA);
+  const [email, setEmail]            = useAtom(emailA);
+  const [password, setPassword]      = useAtom(passwordA);
+  const [errorMsg, setError]         = useAtom(errorA);
+  const [enabled, setEnabled]        = useAtom(enabledA);
 
-  /* ------------ fetch public flag once ------------ */
+  /* ---------------- fetch public flag once ------------------------ */
   useEffect(() => {
     (async () => {
       try {
@@ -40,7 +47,7 @@ export default function RegisterPage() {
     })();
   }, []);
 
-  /* ------------ normal submit ------------ */
+  /* ---------------- submit handler ------------------------------- */
   async function handleRegister(e: FormEvent) {
     e.preventDefault();
     setError("");
@@ -49,9 +56,9 @@ export default function RegisterPage() {
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/register`,
         {
-          method: "POST",
+          method : "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, email, password }),
+          body   : JSON.stringify({ username, email, password }),
         }
       );
 
@@ -74,11 +81,8 @@ export default function RegisterPage() {
     }
   }
 
-  /* ------------------------------------------------------------------ */
-  /*                            RENDER                                  */
-  /* ------------------------------------------------------------------ */
+  /* ---------------- disabled flag handling ----------------------- */
   if (enabled === false) {
-    /* -------- pretty “disabled” message -------- */
     return (
       <div className="min-h-screen flex items-center justify-center bg-theme-50 dark:bg-theme-950 p-4">
         <div
@@ -107,7 +111,6 @@ export default function RegisterPage() {
     );
   }
 
-  /* loading spinner while we don’t know yet */
   if (enabled === null) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-theme-50 dark:bg-theme-950">
@@ -116,6 +119,7 @@ export default function RegisterPage() {
     );
   }
 
+  /* --------------------------- UI ------------------------------- */
   return (
     <div
       className={cn(
@@ -141,7 +145,8 @@ export default function RegisterPage() {
           </p>
         </div>
 
-        <form
+        {/* ---------------- Radix Form ---------------- */}
+        <Form.Root
           onSubmit={handleRegister}
           className={cn(
             "bg-white dark:bg-theme-900",
@@ -149,60 +154,81 @@ export default function RegisterPage() {
             "shadow-sm hover:shadow-md transition-all duration-300"
           )}
         >
-          <div className="p-8">
+          <div className="p-8 space-y-6">
             {errorMsg && (
               <div
                 className={cn(
                   "bg-red-50 dark:bg-red-900/20",
                   "text-red-600 dark:text-red-400",
-                  "p-4 mb-6 rounded-lg",
-                  "border border-red-100 dark:border-red-800/50"
+                  "p-4 rounded-lg border border-red-100 dark:border-red-800/50"
                 )}
               >
                 {errorMsg}
               </div>
             )}
 
-            {/* username */}
-            <Field label="Username">
-              <input
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Choose a username"
-              />
-            </Field>
+            {/* Username */}
+            <Form.Field name="username">
+              <Form.Label className="block mb-2 text-sm font-medium text-theme-500">
+                Username
+              </Form.Label>
+              <Form.Control asChild>
+                <input
+                  required
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Choose a username"
+                  className={inputClass()}
+                />
+              </Form.Control>
+            </Form.Field>
 
-            {/* email */}
-            <Field label="Email (optional)">
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@email.com"
-              />
-            </Field>
+            {/* Email */}
+            <Form.Field name="email">
+              <Form.Label className="block mb-2 text-sm font-medium text-theme-500">
+                Email (optional)
+              </Form.Label>
+              <Form.Control asChild>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@email.com"
+                  className={inputClass()}
+                />
+              </Form.Control>
+            </Form.Field>
 
-            {/* password */}
-            <Field label="Password">
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Create a strong password"
-              />
-            </Field>
+            {/* Password */}
+            <Form.Field name="password">
+              <Form.Label className="block mb-2 text-sm font-medium text-theme-500">
+                Password
+              </Form.Label>
+              <Form.Control asChild>
+                <input
+                  required
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Create a strong password"
+                  className={inputClass()}
+                />
+              </Form.Control>
+            </Form.Field>
 
-            {/* submit */}
-            <button
-              type="submit"
-              className={cn(
-                "w-full py-3 px-6 rounded-lg mt-4",
-                "bg-theme-500 hover:bg-theme-600 active:bg-theme-700",
-                "text-white font-medium transition-all duration-200"
-              )}
-            >
-              Create Account
-            </button>
+            {/* Submit */}
+            <Form.Submit asChild>
+              <button
+                type="submit"
+                className={cn(
+                  "w-full py-3 px-6 rounded-lg mt-2",
+                  "bg-theme-500 hover:bg-theme-600 active:bg-theme-700",
+                  "text-white font-medium transition-all duration-200"
+                )}
+              >
+                Create Account
+              </button>
+            </Form.Submit>
 
             <div className="mt-6 text-center text-sm text-theme-600 dark:text-theme-400">
               Already have an account?{" "}
@@ -211,26 +237,20 @@ export default function RegisterPage() {
               </a>
             </div>
           </div>
-        </form>
+        </Form.Root>
       </div>
     </div>
   );
 }
 
-/* small helper for field layout */
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="mb-6">
-      <label className="block mb-2 text-sm font-medium text-theme-500">
-        {label}
-      </label>
-      {children}
-    </div>
+/* tiny helper for consistent input styling */
+function inputClass() {
+  return cn(
+    "w-full px-4 py-3 rounded-lg",
+    "bg-theme-50 dark:bg-theme-800",
+    "border border-theme-200 dark:border-theme-700",
+    "focus:border-theme-500 focus:outline-none",
+    "transition-colors duration-200",
+    "text-theme-900 dark:text-theme-100"
   );
 }
