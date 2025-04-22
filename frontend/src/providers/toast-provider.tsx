@@ -122,7 +122,7 @@ export function ToastProvider({ children }: PropsWithChildren) {
                 t.variant === "error"   && "border-l-4 border-red-500",
               )}
             >
-              <div className="flex-1 min-w-0 w-full">
+              <div className="flex-1 md:min-w-20">
                 <Toast.Title
                   className={cn(
                     "font-semibold leading-tight truncate",
@@ -164,7 +164,7 @@ export function ToastProvider({ children }: PropsWithChildren) {
                 ? { top: 90, left: "50%", transform: "translateX(-50%)" }
                 : { bottom: "1rem", right: "1rem" }
             }
-            className="fixed z-[60] flex flex-col gap-2 p-2 w-96 max-w-[calc(100vw-1rem)] pointer-events-none"
+            className="fixed z-[60] flex flex-col gap-2 p-2 max-w-[calc(100vw-1rem)] pointer-events-none"
           />
         </Toast.Viewport>
       </ToastContext.Provider>
