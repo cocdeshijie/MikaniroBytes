@@ -1,7 +1,9 @@
 import hashlib
+import io
 import os
 import secrets
 import time
+import zipfile
 from typing import List, Optional
 
 from fastapi import (
@@ -20,40 +22,33 @@ from app.db.database import get_db
 from app.db.models.file import File as FileModel
 from app.db.models.storage_enums import FileType, StorageType
 from app.db.models.user import User
-from app.db.models.system_settings import SystemSettings              # ★ NEW
+from app.db.models.system_settings import SystemSettings
 from app.dependencies.auth import get_current_user, get_optional_user
 
 # -----------------------------------------------------------------------------
-# router
+# Router & constants
 # -----------------------------------------------------------------------------
 router = APIRouter()
-
 UPLOAD_DIR = "uploads"
 
 
 # -----------------------------------------------------------------------------
-# helpers
+# Helpers
 # -----------------------------------------------------------------------------
 def is_super_admin(user: User) -> bool:
-    """
-    Detect if *user* has global privileges.
-
-    Adapt the implementation to your schema if necessary:
-    * a boolean column  ->  return user.is_admin
-    * a role attribute   ->  return user.role == "SUPER_ADMIN"
-    * a group relation   ->  return getattr(user.group, "name", "") == "SUPER_ADMIN"
-    """
+    """Return True if the user belongs to the SUPER_ADMIN group."""
     return getattr(user.group, "name", "").upper() == "SUPER_ADMIN"
 
 
 def disk_path(rel_path: str) -> str:
-    """Convert relative DB path → absolute OS path."""
+    """Convert a relative DB path into an absolute path on disk."""
     return os.path.join(UPLOAD_DIR, rel_path)
 
+# -----------------------------------------------------------------------------
+# Pydantic DTOs
+# -----------------------------------------------------------------------------
 
-# -----------------------------------------------------------------------------
-# pydantic models (unchanged except re‑ordered)
-# -----------------------------------------------------------------------------
+
 class MyFileItem(BaseModel):
     file_id: int
     original_filename: Optional[str]
@@ -67,20 +62,24 @@ class BatchDeletePayload(BaseModel):
     ids: List[int]
 
 
-# -----------------------------------------------------------------------------
-# 1) batch‑delete --------------------------------------------------------------
-# -----------------------------------------------------------------------------
+class BatchDownloadPayload(BaseModel):
+    ids: List[int]
+
+# ============================================================================
+# 1) Batch DELETE
+# ============================================================================
+
+
 @router.delete("/batch-delete")
 def batch_delete_files(
     payload: BatchDeletePayload,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Delete multiple files.
+    """Delete multiple files in one request.
 
-    * **Normal users** – may only delete their own uploads.
-    * **SUPER_ADMIN** – may delete *any* files passed in the `ids` list.
+    * Normal users may only delete **their own** uploads.
+    * **SUPER_ADMIN** may delete *any* files passed in the `ids` list.
     """
     if not payload.ids:
         raise HTTPException(status_code=400, detail="Empty ids list")
@@ -113,10 +112,88 @@ def batch_delete_files(
     db.commit()
     return {"deleted": deleted_ids}
 
+# ============================================================================
+# 2) Batch DOWNLOAD  ← NEW
+# ============================================================================
 
-# -----------------------------------------------------------------------------
-# 2) upload single file
-# -----------------------------------------------------------------------------
+
+@router.post("/batch-download")
+def batch_download_files(
+    payload: BatchDownloadPayload,
+    request: Request,
+    db: Session = Depends(get_db),
+    token: Optional[str] = None,
+):
+    """Create an on‑the‑fly ZIP archive containing the requested files.
+
+    * Normal users may only download **their own** files.
+    * **SUPER_ADMIN** can download any listed files.
+    * Authentication can be supplied either via an Authorization header or a
+      `?token=` query parameter (useful for one‑click links).
+    """
+    # ------------- resolve user (header OR token param) -------------
+    current_user: Optional[User] = None
+    if token:
+        from app.db.models.user_session import UserSession  # local import to avoid cycles
+
+        sess = db.query(UserSession).filter(UserSession.token == token).first()
+        if sess:
+            current_user = db.query(User).filter(User.id == sess.user_id).first()
+
+    if current_user is None:
+        current_user = get_current_user(request, db)  # may raise 401
+
+    # ------------- validate ids list -------------------------------
+    if not payload.ids:
+        raise HTTPException(status_code=400, detail="Empty ids list")
+
+    q = db.query(FileModel).filter(FileModel.id.in_(payload.ids))
+    if not is_super_admin(current_user):
+        q = q.filter(FileModel.user_id == current_user.id)
+
+    rows: List[FileModel] = q.all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="No valid files found")
+
+    if not is_super_admin(current_user) and len(rows) != len(payload.ids):
+        raise HTTPException(status_code=403, detail="Some files are not yours")
+
+    # ------------- build ZIP in‑memory -----------------------------
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        added_names: set[str] = set()
+        for f in rows:
+            rel_path = f.storage_data.get("path", "")
+            abs_path = disk_path(rel_path)
+            if not os.path.isfile(abs_path):
+                continue  # skip missing files silently
+
+            # ensure unique name inside ZIP
+            arcname = f.original_filename or rel_path
+            if arcname in added_names:
+                base, ext = os.path.splitext(arcname)
+                arcname = f"{base}_{f.id}{ext}"
+            added_names.add(arcname)
+
+            try:
+                zf.write(abs_path, arcname)
+            except OSError:
+                continue  # skip files that disappear mid‑process
+
+    buffer.seek(0)
+
+    filename = f"files_{int(time.time())}.zip"
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "Content-Type": "application/zip",
+    }
+    return StreamingResponse(buffer, headers=headers)
+
+# ============================================================================
+# 3) Single UPLOAD (unchanged except for docstring re‑wrap)
+# ============================================================================
+
+
 @router.post("/upload")
 def upload_file(
     request: Request,
@@ -124,14 +201,7 @@ def upload_file(
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_user),
 ):
-    """
-    Accept a single file upload.
-
-    • If **SystemSettings.public_upload_enabled** is **False** and the caller
-      is **not authenticated**, we reject with 403.
-    • Anonymous uploads (when allowed) are attributed to the permanent “guest”
-      account.
-    """
+    """Accept a single file upload and persist it on disk and in the DB."""
     # ---------- public‑upload gate ----------------------------------
     settings = db.query(SystemSettings).first()
     if current_user is None:
@@ -159,7 +229,7 @@ def upload_file(
     with open(path, "wb") as out:
         out.write(contents)
 
-    # ---------------- figure out owner ----------------
+    # ---------------- owner -----------------------
     owner_id: Optional[int]
     if current_user:
         owner_id = current_user.id
@@ -167,7 +237,7 @@ def upload_file(
         guest = db.query(User).filter(User.username == "guest").first()
         owner_id = guest.id if guest else None
 
-    # ---------------- DB row ----------------
+    # ---------------- DB row ----------------------
     db_file = FileModel(
         size=len(contents),
         file_type=FileType.BASE,
@@ -190,10 +260,11 @@ def upload_file(
         "original_filename": file.filename,
     }
 
+# ============================================================================
+# 4) My Files list (unchanged)
+# ============================================================================
 
-# -----------------------------------------------------------------------------
-# 3) list *this* user’s files (unchanged)
-# -----------------------------------------------------------------------------
+
 @router.get("/my-files", response_model=List[MyFileItem])
 def list_my_files(
     request: Request,
@@ -218,46 +289,38 @@ def list_my_files(
         for f in rows
     ]
 
+# ============================================================================
+# 5) Single DOWNLOAD (unchanged except super‑admin bypass)
+# ============================================================================
 
-# -----------------------------------------------------------------------------
-# 4) download / stream a file (unchanged)
-# -----------------------------------------------------------------------------
+
 @router.get("/download/{file_id}")
 def download_file(
     file_id: int,
     token: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
-    """
-    Stream the requested file back to the client.
-
-    • If a `token` query‑param is provided, we validate it instead of an
-      Authorization header.  Handy for ZIP / batch downloads.
-    """
+    """Stream the requested file back to the client."""
     # ------------- authorisation (header OR token param) -------------
     session_user: Optional[User] = None
     if token:
         from app.db.models.user_session import UserSession
 
-        session = (
-            db.query(UserSession).filter(UserSession.token == token).first()
-        )
+        session = db.query(UserSession).filter(UserSession.token == token).first()
         if session:
-            session_user = (
-                db.query(User).filter(User.id == session.user_id).first()
-            )
+            session_user = db.query(User).filter(User.id == session.user_id).first()
 
     if not session_user:
         from app.dependencies.auth import get_current_user as _dep
 
         session_user = _dep(Request(scope={"type": "http"}), db)
 
-    # ------------- fetch file row -------------
+    # ------------- fetch file row -----------------------------------
     db_file = db.query(FileModel).filter(FileModel.id == file_id).first()
     if not db_file:
         raise HTTPException(status_code=404, detail="File not found.")
 
-    if db_file.user_id != session_user.id:
+    if db_file.user_id != session_user.id and not is_super_admin(session_user):
         raise HTTPException(status_code=403, detail="Forbidden")
 
     rel_path: str = db_file.storage_data.get("path", "")
@@ -279,4 +342,3 @@ def download_file(
             )
         },
     )
-
