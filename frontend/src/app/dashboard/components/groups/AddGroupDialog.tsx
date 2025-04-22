@@ -1,13 +1,19 @@
 "use client";
 
+/* ------------------------------------------------------------------ */
+/*                               IMPORTS                              */
+/* ------------------------------------------------------------------ */
 import { atom, useAtom } from "jotai";
 import { useMemo } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import * as Form   from "@radix-ui/react-form";          // ← Radix Form
 import { cn } from "@/utils/cn";
 import { useToast } from "@/providers/toast-provider";
 import type { GroupItem } from "@/types/sharedTypes";
 
-/* ---------- util ---------- */
+/* ------------------------------------------------------------------ */
+/*                         HELPERS / UTILITIES                        */
+/* ------------------------------------------------------------------ */
 function sizeToBytes(input: string): number | null {
   const txt = input.trim().toLowerCase();
   if (!txt) return null;
@@ -19,6 +25,19 @@ function sizeToBytes(input: string): number | null {
   return Math.round(num * mult[m[2] ?? "b"]);
 }
 
+const inputCls = () =>
+  cn(
+    "w-full px-3 py-2 rounded",
+    "bg-theme-50 dark:bg-theme-800",
+    "border border-theme-200 dark:border-theme-700",
+    "focus:border-theme-500 focus:outline-none",
+    "transition-colors duration-200",
+    "text-theme-900 dark:text-theme-100"
+  );
+
+/* ------------------------------------------------------------------ */
+/*                               DIALOG                               */
+/* ------------------------------------------------------------------ */
 export default function AddGroupDialog({
   sessionToken,
   onCreated,
@@ -28,7 +47,7 @@ export default function AddGroupDialog({
 }) {
   const { push } = useToast();
 
-  /* local atoms */
+  /* ─── local atoms (per‑instance) ───────────────────────────────── */
   const openA   = useMemo(() => atom(false), []);
   const nameA   = useMemo(() => atom(""), []);
   const allowA  = useMemo(() => atom(""), []);
@@ -37,15 +56,17 @@ export default function AddGroupDialog({
   const errA    = useMemo(() => atom(""), []);
   const loadA   = useMemo(() => atom(false), []);
 
-  const [open, setOpen]   = useAtom(openA);
-  const [name, setName]   = useAtom(nameA);
-  const [allow, setAllow] = useAtom(allowA);
-  const [maxF, setMaxF]   = useAtom(maxFA);
-  const [maxS, setMaxS]   = useAtom(maxSA);
-  const [err, setErr]     = useAtom(errA);
+  const [open, setOpen]       = useAtom(openA);
+  const [name, setName]       = useAtom(nameA);
+  const [allow, setAllow]     = useAtom(allowA);
+  const [maxF, setMaxF]       = useAtom(maxFA);
+  const [maxS, setMaxS]       = useAtom(maxSA);
+  const [err, setErr]         = useAtom(errA);
   const [loading, setLoading] = useAtom(loadA);
 
-  /* --------------- create --------------- */
+  /* ---------------------------------------------------------------- */
+  /*                               SAVE                               */
+  /* ---------------------------------------------------------------- */
   async function create() {
     setErr(""); setLoading(true);
     try {
@@ -55,24 +76,24 @@ export default function AddGroupDialog({
         ? allow.split(",").map((x) => x.trim()).filter(Boolean)
         : [];
 
-      const maxFile   = sizeToBytes(maxF);   // null => unlimited
-      const maxStore  = sizeToBytes(maxS);   // null => unlimited
+      const maxFile  = sizeToBytes(maxF);
+      const maxStore = sizeToBytes(maxS);
 
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/groups`,
         {
-          method: "POST",
+          method : "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${sessionToken}`,
+            Authorization : `Bearer ${sessionToken}`,
           },
           body: JSON.stringify({
             name: name.trim(),
             allowed_extensions: exts,
-            max_file_size: maxFile,
-            max_storage_size: maxStore,
+            max_file_size    : maxFile,
+            max_storage_size : maxStore,
           }),
-        },
+        }
       );
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
@@ -89,7 +110,9 @@ export default function AddGroupDialog({
     } finally { setLoading(false); }
   }
 
-  /* --------------- UI --------------- */
+  /* ---------------------------------------------------------------- */
+  /*                                UI                                */
+  /* ---------------------------------------------------------------- */
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Trigger asChild>
@@ -100,15 +123,18 @@ export default function AddGroupDialog({
 
       <Dialog.Portal>
         <Dialog.Overlay className="bg-black/30 backdrop-blur-sm fixed inset-0 z-50" />
-        <Dialog.Content className={cn(
-          "fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2",
-          "bg-theme-50 dark:bg-theme-900 rounded-lg shadow-lg max-w-sm w-full p-6",
-        )}>
+        <Dialog.Content
+          className={cn(
+            "fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2",
+            "bg-theme-50 dark:bg-theme-900 rounded-lg shadow-lg max-w-sm w-full p-6"
+          )}
+        >
           <Dialog.Title className="text-lg font-medium mb-2">
             Create New Group
           </Dialog.Title>
+
           <Dialog.Description className="text-sm text-theme-600 dark:text-theme-400 mb-4">
-            Leave limits blank for <em>unlimited</em>.
+            Can use 1 KB, 10 MB, 1 GB, etc.
           </Dialog.Description>
 
           {err && (
@@ -117,60 +143,94 @@ export default function AddGroupDialog({
             </p>
           )}
 
-          <Field label="Group Name">
-            <input value={name} onChange={(e)=>setName(e.target.value)}
-                   className="w-full px-3 py-2 rounded border border-theme-200 dark:border-theme-700
-                              bg-theme-50 dark:bg-theme-800" />
-          </Field>
+          {/* --------------- Radix Form --------------- */}
+          <Form.Root onSubmit={(e) => { e.preventDefault(); create(); }} className="space-y-5">
+            {/* Group name */}
+            <Form.Field name="name">
+              <Form.Label className="block mb-1 text-sm font-medium text-theme-700 dark:text-theme-300">
+                Group Name
+              </Form.Label>
+              <Form.Control asChild>
+                <input
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className={inputCls()}
+                />
+              </Form.Control>
+            </Form.Field>
 
-          <Field label="Allowed Extensions (comma‑sep)">
-            <input value={allow} onChange={(e)=>setAllow(e.target.value)}
-                   placeholder="jpg,png,gif — blank: any"
-                   className="w-full px-3 py-2 rounded border border-theme-200 dark:border-theme-700
-                              bg-theme-50 dark:bg-theme-800" />
-          </Field>
+            {/* Allowed extensions */}
+            <Form.Field name="allowed">
+              <Form.Label className="block mb-1 text-sm font-medium text-theme-700 dark:text-theme-300">
+                Allowed Extensions (comma‑sep)
+              </Form.Label>
+              <Form.Control asChild>
+                <input
+                  value={allow}
+                  onChange={(e) => setAllow(e.target.value)}
+                  className={inputCls()}
+                />
+              </Form.Control>
+              {/* hint */}
+              <p className="mt-1 text-xs text-theme-500 dark:text-theme-400">
+                Leave blank to allow any file type.
+              </p>
+            </Form.Field>
 
-          <Field label="Max File Size">
-            <input value={maxF} onChange={(e)=>setMaxF(e.target.value)}
-                   placeholder="e.g. 10MB"
-                   className="w-full px-3 py-2 rounded border border-theme-200 dark:border-theme-700
-                              bg-theme-50 dark:bg-theme-800" />
-          </Field>
+            {/* Max file size */}
+            <Form.Field name="maxFile">
+              <Form.Label className="block mb-1 text-sm font-medium text-theme-700 dark:text-theme-300">
+                Max File Size
+              </Form.Label>
+              <Form.Control asChild>
+                <input
+                  value={maxF}
+                  onChange={(e) => setMaxF(e.target.value)}
+                  className={inputCls()}
+                />
+              </Form.Control>
+              <p className="mt-1 text-xs text-theme-500 dark:text-theme-400">
+                Leave blank for unlimited.
+              </p>
+            </Form.Field>
 
-          <Field label="Max Total Storage">
-            <input value={maxS} onChange={(e)=>setMaxS(e.target.value)}
-                   placeholder="blank = unlimited"
-                   className="w-full px-3 py-2 rounded border border-theme-200 dark:border-theme-700
-                              bg-theme-50 dark:bg-theme-800" />
-          </Field>
+            {/* Max total storage */}
+            <Form.Field name="maxStore">
+              <Form.Label className="block mb-1 text-sm font-medium text-theme-700 dark:text-theme-300">
+                Max Total Storage
+              </Form.Label>
+              <Form.Control asChild>
+                <input
+                  value={maxS}
+                  onChange={(e) => setMaxS(e.target.value)}
+                  className={inputCls()}
+                />
+              </Form.Control>
+              <p className="mt-1 text-xs text-theme-500 dark:text-theme-400">
+                Leave blank for unlimited.
+              </p>
+            </Form.Field>
 
-          <div className="mt-6 flex justify-end gap-2">
-            <Dialog.Close asChild>
-              <button className="px-4 py-2 rounded border border-theme-300 dark:border-theme-700">
-                Cancel
-              </button>
-            </Dialog.Close>
-            <button
-              disabled={loading}
-              onClick={create}
-              className="px-4 py-2 rounded bg-theme-500 text-white hover:bg-theme-600 disabled:bg-theme-300"
-            >
-              {loading ? "Creating…" : "Create"}
-            </button>
-          </div>
+            {/* actions */}
+            <div className="flex justify-end gap-2 pt-2">
+              <Dialog.Close asChild>
+                <button className="px-4 py-2 rounded border border-theme-300 dark:border-theme-700">
+                  Cancel
+                </button>
+              </Dialog.Close>
+              <Form.Submit asChild>
+                <button
+                  disabled={loading}
+                  className="px-4 py-2 rounded bg-theme-500 text-white hover:bg-theme-600 disabled:bg-theme-300"
+                >
+                  {loading ? "Creating…" : "Create"}
+                </button>
+              </Form.Submit>
+            </div>
+          </Form.Root>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1">
-      <label className="block text-sm font-medium text-theme-700 dark:text-theme-300">
-        {label}
-      </label>
-      {children}
-    </div>
   );
 }
