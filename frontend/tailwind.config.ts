@@ -5,11 +5,7 @@ const theme_color = "#FFAAA7";
 const theme_color_hue_shift = 30;
 
 const config: Config = {
-  content: [
-    "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
-  ],
+  content: ["./src/**/*.{js,ts,jsx,tsx,mdx}"],
   darkMode: ["class"],
   theme: {
     extend: {
