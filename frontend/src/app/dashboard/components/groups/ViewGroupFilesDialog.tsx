@@ -7,13 +7,15 @@ import { cn } from "@/utils/cn";
 import FileViewer from "../files/FileViewer";
 
 export default function ViewGroupFilesDialog({
-  groupId,
-  groupName,
-  sessionToken,
-}: {
-  groupId: number;
-  groupName: string;
-  sessionToken: string;
+                                                 groupId,
+                                                 groupName,
+                                                 sessionToken,
+                                                 className
+                                             }: {
+    groupId: number,
+    groupName: string,
+    sessionToken: string,
+    className?: string
 }) {
   const [open, setOpen] = useState(false);
 

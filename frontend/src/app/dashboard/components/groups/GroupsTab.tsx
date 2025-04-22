@@ -1,5 +1,8 @@
 "use client";
 
+/* ------------------------------------------------------------------ */
+/*                               IMPORTS                              */
+/* ------------------------------------------------------------------ */
 import { atom, useAtom } from "jotai";
 import { useSession } from "next-auth/react";
 import { useEffect } from "react";
@@ -10,23 +13,34 @@ import AddGroupDialog from "./AddGroupDialog";
 import EditGroupDialog from "./EditGroupDialog";
 import ConfirmDeleteGroupDialog from "./ConfirmDeleteGroupDialog";
 import ViewUsersDialog from "./ViewUsersDialog";
-import ViewGroupFilesDialog from "./ViewGroupFilesDialog"; // ★ NEW
+import ViewGroupFilesDialog from "./ViewGroupFilesDialog";
 import type { GroupItem } from "@/types/sharedTypes";
 
-/* ---------- atoms ---------- */
-const groupsAtom = atom<GroupItem[]>([]);
-const fetchedAtom = atom(false);
-const loadingAtom = atom(false);
-const errorAtom = atom("");
+/* ------------------------------------------------------------------ */
+/*                               ATOMS                                */
+/* ------------------------------------------------------------------ */
+const groupsAtom   = atom<GroupItem[]>([]);
+const fetchedAtom  = atom(false);
+const loadingAtom  = atom(false);
+const errorAtom    = atom("");
 
+/* ------------------------------------------------------------------ */
+/*                               CONSTS                               */
+/* ------------------------------------------------------------------ */
+const IMMUTABLE = ["SUPER_ADMIN", "GUEST"];
+
+/* ================================================================== */
+/*                           GROUPS TAB                               */
+/* ================================================================== */
 export default function GroupsTab() {
   const { data: session } = useSession();
-  const [groups, setGroups] = useAtom(groupsAtom);
-  const [fetched, setFetched] = useAtom(fetchedAtom);
-  const [loading, setLoad] = useAtom(loadingAtom);
-  const [error, setError] = useAtom(errorAtom);
 
-  /* -------- initial fetch -------- */
+  const [groups, setGroups]   = useAtom(groupsAtom);
+  const [fetched, setFetched] = useAtom(fetchedAtom);
+  const [loading, setLoad]    = useAtom(loadingAtom);
+  const [error, setError]     = useAtom(errorAtom);
+
+  /* ---------------- initial fetch ---------------- */
   useEffect(() => {
     if (!session?.accessToken || fetched) return;
     fetchGroups();
@@ -35,8 +49,7 @@ export default function GroupsTab() {
   }, [session?.accessToken, fetched]);
 
   async function fetchGroups() {
-    setLoad(true);
-    setError("");
+    setLoad(true); setError("");
     try {
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/groups`,
@@ -46,21 +59,21 @@ export default function GroupsTab() {
       setGroups(await res.json());
     } catch (e: any) {
       setError(e.message);
-    } finally {
-      setLoad(false);
-    }
+    } finally { setLoad(false); }
   }
 
-  /* -------- local mutators -------- */
-  const add = (g: GroupItem) => setGroups((p) => [...p, g]);
-  const upd = (g: GroupItem) => setGroups((p) => p.map((r) => (r.id === g.id ? g : r)));
-  const del = (id: number) => setGroups((p) => p.filter((g) => g.id !== id));
+  /* ---------------- local mutators --------------- */
+  const add = (g: GroupItem)      => setGroups(p => [...p, g]);
+  const upd = (g: GroupItem)      => setGroups(p => p.map(r => r.id === g.id ? g : r));
+  const del = (id: number)        => setGroups(p => p.filter(g => g.id !== id));
 
-  /* -------- derived -------- */
-  const normal = groups.filter((g) => !["SUPER_ADMIN", "GUEST"].includes(g.name));
-  const lockDelete = normal.length <= 1;
+  /* ----------------- derived --------------------- */
+  const normal        = groups.filter(g => !IMMUTABLE.includes(g.name));
+  const lockDeleting  = normal.length <= 1;
 
-  /* -------- UI -------- */
+  /* ------------------------------------------------------------------
+   *   New: Grid‑based controls on sub‑640 px to avoid 3‑on‑1 wrapping
+   * ------------------------------------------------------------------ */
   return (
     <div>
       <h3
@@ -78,11 +91,15 @@ export default function GroupsTab() {
         </p>
       )}
 
+      {/* top bar */}
       <div className="flex items-center justify-between mb-6">
         <span className="text-sm">
           {loading ? "Loading…" : `${groups.length} groups`}
         </span>
-        <AddGroupDialog sessionToken={session?.accessToken || ""} onCreated={add} />
+        <AddGroupDialog
+          sessionToken={session?.accessToken || ""}
+          onCreated={add}
+        />
       </div>
 
       <Tooltip.Provider delayDuration={100}>
@@ -99,38 +116,57 @@ export default function GroupsTab() {
               {groups.map((g) => {
                 const isSuper = g.name === "SUPER_ADMIN";
                 const isGuest = g.name === "GUEST";
-                const prevent = !isSuper && !isGuest && lockDelete;
+                const prevent = !isSuper && !isGuest && lockDeleting;
 
                 return (
                   <li
                     key={g.id}
                     className={cn(
-                      "p-3 rounded border bg-theme-50/20 dark:bg-theme-900/20",
-                      "border-theme-200/50 dark:border-theme-800/50"
+                      "p-3 rounded border",
+                      "border-theme-200/50 dark:border-theme-800/50",
+                      "bg-theme-50/20 dark:bg-theme-900/20",
+                      "space-y-2"
                     )}
                   >
-                    <div className="flex items-center justify-between gap-2 mb-2">
+                    {/* ── Header row ─────────────────────────────── */}
+                    <div
+                      className={cn(
+                        "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
+                      )}
+                    >
+                      {/* name */}
                       <p className="font-medium">{g.name}</p>
-                      <div className="flex items-center gap-2">
-                        {/* ★ NEW – open dialog to browse all files in group */}
+
+                      {/* controls */}
+                      <div
+                        className={cn(
+                          /*  <640 px  →   2‑col grid, full‑width buttons
+                           *  ≥640 px  →   original flex layout             */
+                          "grid grid-cols-2 gap-2",
+                          "sm:flex sm:flex-wrap sm:items-center"
+                        )}
+                      >
                         <ViewGroupFilesDialog
                           groupId={g.id}
                           groupName={g.name}
                           sessionToken={session?.accessToken || ""}
+                          className="w-full sm:w-auto"
                         />
 
-                        {/* existing – view users list */}
                         <ViewUsersDialog
                           group={g}
                           sessionToken={session?.accessToken || ""}
                           onChanged={fetchGroups}
+                          className="w-full sm:w-auto"
                         />
 
                         <EditGroupDialog
                           group={g}
                           sessionToken={session?.accessToken || ""}
                           onUpdated={upd}
+                          className="w-full sm:w-auto"
                         />
+
                         {isSuper || isGuest || prevent ? (
                           <button
                             disabled
@@ -141,7 +177,7 @@ export default function GroupsTab() {
                                 ? "Cannot delete GUEST"
                                 : "At least one group must remain"
                             }
-                            className="px-3 py-1.5 rounded text-white bg-gray-400 cursor-not-allowed"
+                            className="w-full sm:w-auto px-3 py-1.5 rounded text-white bg-gray-400 cursor-not-allowed"
                           >
                             Delete
                           </button>
@@ -150,12 +186,14 @@ export default function GroupsTab() {
                             group={g}
                             sessionToken={session?.accessToken || ""}
                             onDeleted={() => del(g.id)}
+                            className="w-full sm:w-auto"
                           />
                         )}
                       </div>
                     </div>
 
-                    <p className="text-sm text-theme-600 dark:text-theme-400">
+                    {/* ── Limits row ─────────────────────────────── */}
+                    <p className="text-sm text-theme-600 dark:text-theme-400 flex flex-wrap gap-x-1.5">
                       Max file:&nbsp;
                       {g.max_file_size === null ? (
                         "Unlimited"
@@ -169,7 +207,9 @@ export default function GroupsTab() {
                         <ByteValueTooltip bytes={g.max_storage_size} />
                       )}
                     </p>
-                    <p className="text-sm text-theme-600 dark:text-theme-400 mt-0.5">
+
+                    {/* ── Usage row ──────────────────────────────── */}
+                    <p className="text-sm text-theme-600 dark:text-theme-400">
                       Stored:&nbsp;{g.file_count} files –&nbsp;
                       <ByteValueTooltip bytes={g.storage_bytes} />
                     </p>
@@ -183,3 +223,4 @@ export default function GroupsTab() {
     </div>
   );
 }
+

@@ -29,13 +29,15 @@ interface UserItem {
 
 /* ================================================================== */
 export default function ViewUsersDialog({
-  group,
-  sessionToken,
-  onChanged,
-}: {
-  group: GroupInfo;
-  sessionToken: string;
-  onChanged: () => void;
+                                          group,
+                                          sessionToken,
+                                          onChanged,
+                                          className
+                                        }: {
+  group: GroupInfo,
+  sessionToken: string,
+  onChanged: () => void,
+  className?: string
 }) {
   const { push } = useToast();
 

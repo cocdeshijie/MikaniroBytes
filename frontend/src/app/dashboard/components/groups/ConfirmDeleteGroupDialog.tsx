@@ -9,13 +9,15 @@ import type { GroupItem } from "@/types/sharedTypes";
 import { BiCheck } from "react-icons/bi";
 
 export default function ConfirmDeleteGroupDialog({
-  group,
-  sessionToken,
-  onDeleted,
-}: {
-  group: GroupItem;
-  sessionToken: string;
-  onDeleted: (groupId: number) => void;
+                                                   group,
+                                                   sessionToken,
+                                                   onDeleted,
+                                                   className
+                                                 }: {
+  group: GroupItem,
+  sessionToken: string,
+  onDeleted: (groupId: number) => void,
+  className?: string
 }) {
   const { push } = useToast();
 

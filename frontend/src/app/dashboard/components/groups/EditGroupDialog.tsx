@@ -41,13 +41,15 @@ const inputCls = () =>
 /*                               DIALOG                               */
 /* ------------------------------------------------------------------ */
 export default function EditGroupDialog({
-  group,
-  sessionToken,
-  onUpdated,
-}: {
-  group: GroupItem;
-  sessionToken: string;
-  onUpdated: (g: GroupItem) => void;
+                                          group,
+                                          sessionToken,
+                                          onUpdated,
+                                          className
+                                        }: {
+  group: GroupItem,
+  sessionToken: string,
+  onUpdated: (g: GroupItem) => void,
+  className?: string
 }) {
   const { push } = useToast();
 
