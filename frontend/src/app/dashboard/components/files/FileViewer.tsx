@@ -11,6 +11,7 @@ import {
   FiExternalLink,
   FiLoader,
   FiTrash,
+  FiArchive,
 } from "react-icons/fi";
 import { useLasso } from "@/hooks/useLasso";
 import { useToast } from "@/providers/toast-provider";
@@ -24,11 +25,9 @@ export interface RemoteFile {
 
 interface Props {
   fetchEndpoint: string;
-  /** JWT – passed from useSession().accessToken */
-  sessionToken?: string;
+  sessionToken?: string;          /** JWT – useSession().accessToken */
   readOnly?: boolean;
-  /** optional heading shown above the toolbar */
-  title?: string;
+  title?: string;                 /** optional heading shown above the toolbar */
 }
 
 /* ---------- helpers ------------------------------------------------ */
@@ -42,8 +41,6 @@ function shortenFilename(full: string, limit = 26): string {
   if (avail <= 0) return base.slice(0, 1) + "…" + ext;
   return base.slice(0, avail) + "…" + base.slice(-tail) + ext;
 }
-
-/** Make sure we always return an absolute URL (needed in the admin dialogs) */
 function absolute(link: string): string {
   if (link.startsWith("http://") || link.startsWith("https://")) return link;
   return `${process.env.NEXT_PUBLIC_BACKEND_URL}${link}`;
@@ -59,11 +56,12 @@ export default function FileViewer({
   const { push } = useToast();
 
   /* ---------------- state ---------------- */
-  const [files, setFiles]       = useState<RemoteFile[]>([]);
-  const [loading, setLoading]   = useState(false);
-  const [errorMsg, setErr]      = useState("");
-  const [selectedIds, setSel]   = useState<Set<number>>(new Set());
-  const [downloadingId, setDL]  = useState<number | null>(null);
+  const [files, setFiles]           = useState<RemoteFile[]>([]);
+  const [loading, setLoading]       = useState(false);
+  const [errorMsg, setErr]          = useState("");
+  const [selectedIds, setSel]       = useState<Set<number>>(new Set());
+  const [downloadingId, setDL]      = useState<number | null>(null);
+  const [zipBusy, setZipBusy]       = useState(false);               // ← NEW
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   /* ---------------- fetch list ---------------- */
@@ -150,7 +148,43 @@ export default function FileViewer({
     }
   };
 
-  /* ------------ unified batch delete (admin OR normal user) -------- */
+  /* -------- NEW: batch‑download ZIP -------- */
+  const downloadZip = async () => {
+    if (zipBusy || selectedIds.size < 2) return;
+    setZipBusy(true);
+    try {
+      const ids = Array.from(selectedIds);
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/files/batch-download`,
+        {
+          method : "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(sessionToken && { Authorization: `Bearer ${sessionToken}` }),
+          },
+          body: JSON.stringify({ ids }),
+        }
+      );
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.detail || "ZIP download failed");
+      }
+      const blob = await res.blob();
+      const href = URL.createObjectURL(blob);
+      Object.assign(document.createElement("a"), {
+        href,
+        download: `files_${Date.now()}.zip`,
+      }).click();
+      URL.revokeObjectURL(href);
+      push({ title: "ZIP downloaded", variant: "success" });
+    } catch (e: any) {
+      push({ title: e.message ?? "ZIP failed", variant: "error" });
+    } finally {
+      setZipBusy(false);
+    }
+  };
+
+  /* ------------ unified batch delete -------- */
   async function batchDelete() {
     if (readOnly || selectedIds.size === 0) return;
     const ids = Array.from(selectedIds);
@@ -171,7 +205,6 @@ export default function FileViewer({
         const d = await res.json().catch(() => ({}));
         throw new Error(d.detail || "Delete failed");
       }
-
       const { deleted } = await res.json();   // -> { deleted: [...] }
       setFiles((p) => p.filter((f) => !deleted.includes(f.file_id)));
       clearSel();
@@ -195,7 +228,6 @@ export default function FileViewer({
       [file.original_filename]
     );
 
-    /* register for lasso */
     useEffect(() => {
       const el = divRef.current;
       if (!el) return;
@@ -258,7 +290,7 @@ export default function FileViewer({
           <h4 className="text-lg font-medium mb-3">{title}</h4>
         )}
 
-        {/* ‑‑‑‑‑ toolbar ‑‑‑‑‑ */}
+        {/* toolbar */}
         <div className="mb-3 flex items-center gap-3 min-h-[34px]">
           {selCount > 0 ? (
             <>
@@ -284,11 +316,16 @@ export default function FileViewer({
                 </button>
               ) : (
                 <button
-                  disabled
-                  className="flex items-center gap-1 text-xs px-2 py-1 rounded
-                             bg-theme-300 dark:bg-theme-800/40 cursor-not-allowed"
+                  disabled={zipBusy}
+                  onClick={downloadZip}
+                  className={cn(
+                    "flex items-center gap-1 text-xs px-2 py-1 rounded",
+                    zipBusy
+                      ? "bg-theme-300 dark:bg-theme-800/40 cursor-not-allowed"
+                      : "bg-theme-200/60 dark:bg-theme-800/60 hover:bg-theme-200 dark:hover:bg-theme-800"
+                  )}
                 >
-                  <FiDownload /> ZIP
+                  <FiArchive /> ZIP
                 </button>
               )}
 
@@ -314,7 +351,7 @@ export default function FileViewer({
           )}
         </div>
 
-        {/* ‑‑‑‑‑ error / loading messages ‑‑‑‑‑ */}
+        {/* error / loading */}
         {errorMsg && (
           <p className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 mb-4 rounded">
             {errorMsg}
@@ -322,7 +359,7 @@ export default function FileViewer({
         )}
         {loading && <p>Loading…</p>}
 
-        {/* ‑‑‑‑‑ grid + context menu ‑‑‑‑‑ */}
+        {/* grid + context menu */}
         <ContextMenu.Root>
           <ContextMenu.Trigger asChild>
             <div
@@ -370,6 +407,15 @@ export default function FileViewer({
             >
               <FiDownload className="mr-2" /> Download
             </CMI>
+
+            {selCount > 1 && (
+              <CMI
+                onSelect={downloadZip}
+                className={cn(zipBusy && "opacity-40 pointer-events-none")}
+              >
+                <FiArchive className="mr-2" /> ZIP
+              </CMI>
+            )}
 
             {!readOnly && (
               <>
