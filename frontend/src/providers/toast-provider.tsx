@@ -171,3 +171,5 @@ export function ToastProvider({ children }: PropsWithChildren) {
     </Toast.Provider>
   );
 }
+
+export default ToastProvider;
