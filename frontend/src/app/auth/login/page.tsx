@@ -2,36 +2,24 @@
 
 import { FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { signIn, useSession } from "next-auth/react";
+import { signIn } from "next-auth/react";
 import { useAtom, atom } from "jotai";
 import * as Form from "@radix-ui/react-form";
 import { cn } from "@/utils/cn";
-import { useToast } from "@/providers/toast-provider";
+import { useToast } from "@/lib/toast";
 
-/* ------------------------------------------------------------------ */
-/*                               ATOMS                                */
-/* ------------------------------------------------------------------ */
 const usernameAtom = atom("");
 const passwordAtom = atom("");
 
-/* ------------------------------------------------------------------ */
-/*                               PAGE                                 */
-/* ------------------------------------------------------------------ */
-/**
- * Login Page — now built with @radix-ui/react-form.
- */
 export default function LoginPage() {
-  const router               = useRouter();
-  const { data: session }    = useSession();
-  const { push }             = useToast();
+  const router   = useRouter();
+  const { push } = useToast();
 
-  const [username, setUser]  = useAtom(usernameAtom);
-  const [password, setPass]  = useAtom(passwordAtom);
+  const [username, setUser] = useAtom(usernameAtom);
+  const [password, setPass] = useAtom(passwordAtom);
 
-  /* ----------------------------- submit --------------------------- */
   async function handleLogin(e: FormEvent) {
     e.preventDefault();
-
     try {
       const res = await signIn("credentials", {
         username,
@@ -40,22 +28,13 @@ export default function LoginPage() {
       });
 
       if (res?.error) {
-        push({
-          title: "Login Failed",
-          description: res.error,
-          variant: "error",
-        });
+        push({ title: "Login Failed", description: res.error, variant: "error" });
         return;
       }
-
       push({ title: "Welcome back!", variant: "success" });
       router.push("/profile");
     } catch (err: any) {
-      push({
-        title: "Login Error",
-        description: err?.message ?? "Login failed.",
-        variant: "error",
-      });
+      push({ title: "Login Error", description: err?.message ?? "Login failed.", variant: "error" });
     }
   }
 
