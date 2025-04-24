@@ -1,77 +1,39 @@
 "use client";
 
-import { useSession } from "next-auth/react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { atom, useAtom } from "jotai";
 import { cn } from "@/utils/cn";
 import Link from "next/link";
-import { api } from "@/lib/api";           // ⬅️ api() wrapper
-
-// (Optional) We can store a pageError in Jotai if you want:
-const pageErrorAtom = atom<string>("");
-// (Optional) store if user is admin:
-const isAdminAtom   = atom<boolean>(false);
+import { useAuth } from "@/lib/auth";
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { data: session, status } = useSession();
-  const router                    = useRouter();
-
-  // optional: global error or isAdmin states
-  const [pageError, setPageError] = useAtom(pageErrorAtom);
-  const [isAdmin,   setIsAdmin]   = useAtom(isAdminAtom);
+  const { session, status, isAdmin } = useAuth();
+  const router                       = useRouter();
+  const pathname                     = usePathname();
 
   /* redirect guests */
   useEffect(() => {
-    if (status === "unauthenticated") {
-      router.replace("/auth/login");
-    }
+    if (status === "unauthenticated") router.replace("/auth/login");
   }, [status, router]);
 
-  /* On mount, ask backend for group name via api() */
-  useEffect(() => {
-    if (status !== "authenticated" || !session?.accessToken) return;
-
-    (async () => {
-      try {
-        setPageError("");
-        const me = await api<{ group?: { name: string } }>("/auth/me", {
-          token: session.accessToken,
-        });
-        setIsAdmin(me.group?.name === "SUPER_ADMIN");
-      } catch (err: any) {
-        setPageError(err.message || "Error checking admin status");
-      }
-    })();
-  }, [status, session?.accessToken]);
-
-  if (status === "loading") {
+  if (status === "loading" || status === "unauthenticated") {
     return (
       <div className="min-h-screen flex items-center justify-center bg-theme-50 dark:bg-theme-950">
         <p className="text-lg text-theme-700 dark:text-theme-300">
-          Checking session...
+          {status === "loading" ? "Checking session…" : "Redirecting to login…"}
         </p>
       </div>
     );
   }
 
-  if (status === "unauthenticated") {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-theme-50 dark:bg-theme-950">
-        <p className="text-lg text-theme-700 dark:text-theme-300">
-          Redirecting to login...
-        </p>
-      </div>
-    );
-  }
-
+  /* --------------------------- UI ---------------------------- */
   return (
     <div className="min-h-screen bg-theme-50 dark:bg-theme-950">
-      {/* Example header styling */}
+      {/* Header */}
       <div
         className={cn(
           "relative pt-24 pb-6 md:pt-28 md:pb-8",
@@ -85,80 +47,50 @@ export default function DashboardLayout({
             className={cn(
               "relative rounded-xl overflow-hidden backdrop-blur-sm",
               "border border-theme-200/25 dark:border-theme-700/25",
-              "shadow-lg shadow-theme-500/10",
-              "p-6 md:p-8"
+              "shadow-lg shadow-theme-500/10 p-6 md:p-8"
             )}
           >
             <h1
               className={cn(
                 "text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold",
-                "text-theme-950 dark:text-theme-50",
-                "mb-4 leading-tight"
+                "text-theme-950 dark:text-theme-50 leading-tight"
               )}
             >
               Dashboard
             </h1>
-            {pageError && (
-              <div
-                className={cn(
-                  "bg-red-100/80 dark:bg-red-900/30",
-                  "text-red-700 dark:text-red-300",
-                  "p-3 my-4 rounded-lg",
-                  "border border-red-200 dark:border-red-800",
-                  "backdrop-blur-sm"
-                )}
-              >
-                {pageError}
-              </div>
-            )}
           </div>
         </div>
       </div>
 
-      {/* Layout with left nav + main content */}
+      {/* Content */}
       <section className="relative bg-theme-50 dark:bg-theme-950">
-        <div
-          className={cn(
-            "hidden md:block absolute inset-0",
-            "bg-theme-100 dark:bg-theme-900",
-            "opacity-20"
-          )}
-        />
-        <div
-          className={cn(
-            "relative py-6",
-            "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"
-          )}
-        >
+        <div className="hidden md:block absolute inset-0 bg-theme-100 dark:bg-theme-900 opacity-20" />
+        <div className="relative py-6 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="md:grid md:grid-cols-12 md:gap-6">
-            {/* LEFT COLUMN: Nav */}
-            <div className="md:col-span-4 space-y-6 mb-6 md:mb-0">
+            {/* Left nav */}
+            <nav className="md:col-span-4 space-y-6 mb-6 md:mb-0">
               <div
                 className={cn(
                   "rounded-xl overflow-hidden",
                   "ring-2 ring-theme-200/25 dark:ring-theme-800/25",
-                  "bg-theme-50 dark:bg-theme-950",
-                  "shadow-md shadow-theme-500/5 p-5"
+                  "bg-theme-50 dark:bg-theme-950 shadow-md shadow-theme-500/5 p-5"
                 )}
               >
-                {/* Desktop nav buttons */}
                 <div className="space-y-2">
-                  <NavButton href="/dashboard/files" label="My Files" />
-                  {isAdmin && <NavButton href="/dashboard/groups"  label="Groups"  />}
-                  {isAdmin && <NavButton href="/dashboard/configs" label="Configs" />}
+                  <NavButton href="/dashboard/files" label="My Files" current={pathname} />
+                  {isAdmin && <NavButton href="/dashboard/groups"  label="Groups"  current={pathname} />}
+                  {isAdmin && <NavButton href="/dashboard/configs" label="Configs" current={pathname} />}
                 </div>
               </div>
-            </div>
+            </nav>
 
-            {/* RIGHT COLUMN: nested route content */}
+            {/* Right column */}
             <div className="md:col-span-8">
               <div
                 className={cn(
                   "rounded-xl overflow-hidden",
                   "ring-2 ring-theme-200/25 dark:ring-theme-800/25",
-                  "bg-theme-50 dark:bg-theme-950",
-                  "shadow-md shadow-theme-500/5",
-                  "h-full"
+                  "bg-theme-50 dark:bg-theme-950 shadow-md shadow-theme-500/5 h-full"
                 )}
               >
                 <div className="p-5">{children}</div>
@@ -171,10 +103,16 @@ export default function DashboardLayout({
   );
 }
 
-// Reusable button for nav links
-function NavButton({ href, label }: { href: string; label: string }) {
-  const pathname = usePathname();
-  const selected = pathname.startsWith(href);
+function NavButton({
+  href,
+  label,
+  current,
+}: {
+  href: string;
+  label: string;
+  current: string;
+}) {
+  const selected = current.startsWith(href);
 
   return (
     <Link
