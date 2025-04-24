@@ -20,9 +20,10 @@ interface GroupItem {
   name: string;
 }
 interface SystemSettingsData {
-  registration_enabled: boolean;
-  public_upload_enabled: boolean;
-  default_user_group_id: number | null;
+  registration_enabled   : boolean;
+  public_upload_enabled  : boolean;
+  default_user_group_id  : number | null;
+  upload_path_template   : string;
 }
 
 /* ------------------------------------------------------------------ */
@@ -32,9 +33,10 @@ const loadingAtom = atom(false);
 const errorAtom   = atom("");
 const groupsAtom  = atom<GroupItem[]>([]);
 const configAtom  = atom<SystemSettingsData>({
-  registration_enabled : true,
-  public_upload_enabled: false,
-  default_user_group_id: null,
+  registration_enabled  : true,
+  public_upload_enabled : false,
+  default_user_group_id : null,
+  upload_path_template  : "{Y}/{m}",
 });
 
 /* ================================================================== */
@@ -99,6 +101,8 @@ export default function ConfigsTab() {
     setConfig((p) => ({ ...p, public_upload_enabled: v }));
   const changeGroup = (v: string) =>
     setConfig((p) => ({ ...p, default_user_group_id: +v }));
+  const changeTemplate = (v: string) =>
+    setConfig((p) => ({ ...p, upload_path_template: v }));
 
   async function save() {
     setLoading(true);
@@ -221,6 +225,35 @@ export default function ConfigsTab() {
             </Select.Root>
           </div>
         )}
+
+        {/* ─────────────── Upload path template ─────────────── */}
+        <div>
+          <label className="block mb-1 text-sm text-theme-600 dark:text-theme-400">
+            Upload path template
+          </label>
+          <input
+            type="text"
+            value={config.upload_path_template}
+            onChange={(e) => changeTemplate(e.target.value)}
+            placeholder="{Y}/{m}"
+            className={cn(
+              "w-full px-3 py-2 rounded",
+              "bg-theme-50 dark:bg-theme-800",
+              "border border-theme-200 dark:border-theme-700",
+              "focus:border-theme-500 focus:outline-none",
+              "transition-colors duration-200",
+              "text-theme-900 dark:text-theme-100"
+            )}
+          />
+          <p className="mt-1 text-xs text-theme-500 dark:text-theme-400">
+            Use&nbsp;
+            <code className="font-mono">{'{Y}'}</code>,&nbsp;
+            <code className="font-mono">{'{m}'}</code>,&nbsp;
+            <code className="font-mono">{'{d}'}</code>,&nbsp;
+            <code className="font-mono">{'{slug}'}</code> etc.&nbsp;for dynamic
+            folders.
+          </p>
+        </div>
       </div>
 
       <button
@@ -237,7 +270,7 @@ export default function ConfigsTab() {
 /* ------------------------------------------------------------------ */
 /*                              TOGGLE                                */
 /* ------------------------------------------------------------------ */
-/** Radix‑checkbox based toggle used for boolean site config options */
+/** Radix-checkbox based toggle used for boolean site config options */
 function Toggle({
   label,
   checked,
@@ -272,3 +305,4 @@ function Toggle({
     </div>
   );
 }
+
