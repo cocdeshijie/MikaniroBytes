@@ -249,7 +249,11 @@ export default function FileViewer({
       measure();
       const ro = new ResizeObserver(measure);
       ro.observe(el);
-      return () => ro.disconnect();
+      return () => {
+        ro.disconnect();
+        /* ---- unregister on unmount -> prevents ghost rectangles ---- */
+        registerTile(file.file_id, null);
+      };
     }, [registerTile]);
 
     const handleClick = (e: React.MouseEvent) => {
@@ -294,6 +298,7 @@ export default function FileViewer({
   const firstId = Array.from(selectedIds)[0];
   const selectedOne =
     selCount === 1 ? files.find((f) => f.file_id === firstId) : null;
+  const nothingSelected = selCount === 0;
 
   /* ---------------- render ---------------- */
   return (
@@ -375,6 +380,12 @@ export default function FileViewer({
           <ContextMenu.Trigger asChild>
             <div
               ref={containerRef}
+              /* click empty area = clear selection */
+              onClick={(e) => {
+                if (e.target === containerRef.current && !(e.ctrlKey || e.metaKey)) {
+                  clearSel();
+                }
+              }}
               onMouseDown={(e) => {
                 if (e.ctrlKey || e.metaKey) return;
                 lassoMouseDown(e);
@@ -405,6 +416,7 @@ export default function FileViewer({
           >
             {/* open in new tab */}
             <CMI
+              disabled={selCount !== 1}
               onSelect={() =>
                 selectedOne && window.open(absolute(selectedOne.direct_link), "_blank")
               }
@@ -412,30 +424,29 @@ export default function FileViewer({
               <FiExternalLink className="mr-2" /> Open in new tab
             </CMI>
 
-            <CMI onSelect={copySelected}>
+            <CMI disabled={nothingSelected} onSelect={copySelected}>
               <FiCopy className="mr-2" /> Copy URL{selCount > 1 && "s"}
             </CMI>
 
             <CMI
+              disabled={selCount !== 1}
               onSelect={() => selectedOne && downloadOne(selectedOne)}
-              className={cn(selCount !== 1 && "opacity-40 pointer-events-none")}
             >
               <FiDownload className="mr-2" /> Download
             </CMI>
 
-            {selCount > 1 && (
-              <CMI
-                onSelect={downloadZip}
-                className={cn(zipBusy && "opacity-40 pointer-events-none")}
-              >
-                <FiArchive className="mr-2" /> ZIP
-              </CMI>
-            )}
+            <CMI
+              disabled={selCount < 2}
+              onSelect={downloadZip}
+            >
+              <FiArchive className="mr-2" /> ZIP
+            </CMI>
 
             {!readOnly && (
               <>
                 <ContextMenu.Separator className="h-px my-1 bg-theme-200 dark:bg-theme-700" />
                 <CMI
+                  disabled={nothingSelected}
                   onSelect={() => setConfirmOpen(true)}
                   className="text-red-600"
                 >
@@ -489,18 +500,22 @@ export default function FileViewer({
 function CMI({
   children,
   onSelect,
+  disabled = false,
   className = "",
 }: {
   children: React.ReactNode;
   onSelect: () => void;
+  disabled?: boolean;
   className?: string;
 }) {
   return (
     <ContextMenu.Item
-      onSelect={onSelect}
+      disabled={disabled}
+      onSelect={disabled ? undefined : onSelect}
       className={cn(
         "flex items-center px-2 py-1.5 text-sm rounded cursor-pointer outline-none",
         "text-theme-800 dark:text-theme-200 hover:bg-theme-200/50 dark:hover:bg-theme-800/50",
+        disabled && "opacity-40 pointer-events-none select-none",
         className
       )}
     >
