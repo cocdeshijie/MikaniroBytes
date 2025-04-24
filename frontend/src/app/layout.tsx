@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { getServerSession } from "next-auth";
 import localFont from "next/font/local";
 import "./globals.css";
 
@@ -8,6 +9,7 @@ import { ScrollProvider } from "@/providers/scroll-provider";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { NextAuthProvider } from "@/providers/next-auth-provider";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { ToastProvider } from "@/providers/toast-provider";
 
 /* ------------------------------------------------------------------ */
@@ -33,17 +35,22 @@ export const metadata: Metadata = {
 /* ------------------------------------------------------------------ */
 /*                             LAYOUT                                 */
 /* ------------------------------------------------------------------ */
-
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  /* ▶︎▶︎ server-side session fetch  */
+  const session = await getServerSession(authOptions);
+
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+      <body
+        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+      >
         <ToastProvider>
-          <NextAuthProvider>
+          {/* pass the pre-fetched session ↓ */}
+          <NextAuthProvider session={session}>
             <JotaiProvider>
               <ThemeProvider>
                 <ScrollProvider>
