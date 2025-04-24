@@ -25,9 +25,6 @@ const pendingCountAtom = atom((get) =>
 /* ------------------------------------------------------------------ */
 /*                            HELPERS                                 */
 /* ------------------------------------------------------------------ */
-/**
- * Try to turn FastAPI error JSON (or plain text) into a nice message.
- */
 function parseUploadError(raw: string | null): string {
   if (!raw) return "Upload failed";
   try {
@@ -158,9 +155,9 @@ export default function Home() {
   /* ------------------------------------------------------------------ */
 
   return (
-    <div className="relative min-h-screen bg-theme-50 dark:bg-theme-950">
-      {/* Hero section */}
-      <div className="flex flex-col items-center justify-center px-6 py-16 sm:py-24">
+    <div className="relative bg-theme-50 dark:bg-theme-950">
+      {/* Hero + Upload section – guaranteed ≥ viewport height */}
+      <div className="min-h-screen flex flex-col items-center justify-center px-6 py-16 sm:py-24">
         <div className="mb-10 flex flex-col items-center">
           <h1
             className={cn(
@@ -262,16 +259,6 @@ export default function Home() {
           )}
         </div>
       </div>
-
-      {/* Footer */}
-      <footer
-        className="text-center py-8 bg-theme-50 dark:bg-theme-950
-                 text-theme-600 dark:text-theme-400 border-t border-theme-200 dark:border-theme-800"
-      >
-        <p>
-          Made with <span className="text-red-500">&hearts;</span> by You
-        </p>
-      </footer>
     </div>
   );
 }

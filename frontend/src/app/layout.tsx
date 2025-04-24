@@ -6,6 +6,7 @@ import { JotaiProvider } from "@/providers/jotai-provider";
 import { ThemeProvider } from "@/providers/theme-provider";
 import { ScrollProvider } from "@/providers/scroll-provider";
 import Header from "@/components/Header";
+import Footer from "@/components/Footer";
 import { NextAuthProvider } from "@/providers/next-auth-provider";
 import { ToastProvider } from "@/providers/toast-provider";
 
@@ -48,6 +49,7 @@ export default function RootLayout({
                 <ScrollProvider>
                   <Header />
                   {children}
+                  <Footer />
                 </ScrollProvider>
               </ThemeProvider>
             </JotaiProvider>
