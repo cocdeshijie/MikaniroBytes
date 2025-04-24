@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
+
 from app.db.models.user import User
 from app.db.models.group import Group
 from app.db.models.group_settings import GroupSettings
@@ -9,7 +10,7 @@ from app.utils.security import hash_password
 
 def init_db(db: Session) -> None:
     """
-    Run once at server start‑up.
+    Run once at server start-up.
 
     • Ensure the SUPER_ADMIN and GUEST groups and their bootstrap users.
     • Ensure at least one *normal* group (neither SUPER_ADMIN nor GUEST).
@@ -45,7 +46,7 @@ def init_db(db: Session) -> None:
         )
         db.add(new_user)
         db.commit()
-        print("Created super‑admin user: admin / admin")
+        print("Created super-admin user: admin / admin")
 
     # ------------------------------------------------------------------
     # 3) GUEST group  (special, cannot be deleted or assigned)
@@ -105,22 +106,17 @@ def init_db(db: Session) -> None:
             registration_enabled=True,
             public_upload_enabled=False,
             default_user_group_id=normal_group.id,
+            upload_path_template="{Y}/{m}",
         )
         db.add(system_settings)
         db.commit()
     else:
-        # Validate stored default group
+        # Validate stored default group + ensure upload_path_template
         if not system_settings.default_user_group_id:
             system_settings.default_user_group_id = normal_group.id
-            db.add(system_settings)
-            db.commit()
-        else:
-            current = db.query(Group).filter(
-                Group.id == system_settings.default_user_group_id
-            ).first()
-            if not current or current.name in ("SUPER_ADMIN", "GUEST"):
-                system_settings.default_user_group_id = normal_group.id
-                db.add(system_settings)
-                db.commit()
+        if not system_settings.upload_path_template:
+            system_settings.upload_path_template = "{Y}/{m}"
+        db.add(system_settings)
+        db.commit()
 
     print("Database initialized successfully.")
