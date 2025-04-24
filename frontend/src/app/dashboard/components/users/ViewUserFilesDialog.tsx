@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { FiX, FiFolder } from "react-icons/fi";
 import { cn } from "@/utils/cn";
 import FileViewer from "../files/FileViewer";
+import { atom, useAtom } from "jotai";
 
 export default function ViewUserFilesDialog({
   userId,
@@ -15,7 +16,8 @@ export default function ViewUserFilesDialog({
   username: string;
   sessionToken: string;
 }) {
-  const [open, setOpen] = useState(false);
+  /* atom instead of useState */
+  const [open, setOpen] = useAtom(useMemo(() => atom(false), []));
 
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>

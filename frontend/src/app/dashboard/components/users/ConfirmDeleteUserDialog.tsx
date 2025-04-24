@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo } from "react";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Checkbox     from "@radix-ui/react-checkbox";
 import { cn } from "@/utils/cn";
 import { useToast } from "@/providers/toast-provider";
 import { FiTrash } from "react-icons/fi";
 import { BiCheck } from "react-icons/bi";
+import { atom, useAtom } from "jotai";
 
 /* ------------------------------------------------------------------ */
 /*                           local type                               */
@@ -27,9 +28,10 @@ export default function ConfirmDeleteUserDialog({
 }) {
   const { push } = useToast();
 
-  const [open, setOpen]         = useState(false);
-  const [deleteFiles, setFiles] = useState(false);
-  const [loading, setLoading]   = useState(false);
+  /* ---------- local atoms ---------- */
+  const [open,        setOpen]        = useAtom(useMemo(() => atom(false), []));
+  const [deleteFiles, setDeleteFiles] = useAtom(useMemo(() => atom(false), []));
+  const [loading,     setLoading]     = useAtom(useMemo(() => atom(false), []));
 
   /* ---------------- confirm handler ---------------- */
   async function confirm() {
@@ -88,7 +90,7 @@ export default function ConfirmDeleteUserDialog({
             <Checkbox.Root
               id={`del_user_${user.id}`}
               checked={deleteFiles}
-              onCheckedChange={(v) => setFiles(!!v)}
+              onCheckedChange={(v) => setDeleteFiles(!!v)}
               className={cn(
                 "h-4 w-4 shrink-0 rounded border",
                 "border-theme-400 dark:border-theme-600 bg-white dark:bg-theme-800",

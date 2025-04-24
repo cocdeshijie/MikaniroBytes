@@ -1,12 +1,17 @@
 "use client";
 
-import { useState, ChangeEvent, FormEvent, useEffect } from "react";
+import {
+  ChangeEvent,
+  FormEvent,
+  useEffect,
+  useMemo,
+} from "react";
 import { useSession } from "next-auth/react";
 import { FiUpload, FiCheck, FiX, FiFile } from "react-icons/fi";
 import { cn } from "@/utils/cn";
 import { useToast } from "@/providers/toast-provider";
 import { filesNeedsRefreshAtom } from "@/atoms/fileAtoms";
-import { useAtom } from "jotai";
+import { atom, useAtom } from "jotai";
 
 type Phase = "idle" | "selected" | "uploading" | "done" | "error";
 
@@ -34,22 +39,31 @@ interface ApiOk {
   result_text?: string;
 }
 
+/* ------------------------------------------------------------------ */
+/*                         LOCAL JOTAI ATOMS                          */
+/* ------------------------------------------------------------------ */
+const phaseA     = /* per-instance */ () => atom<Phase>("idle");
+const fileA      = () => atom<File | null>(null);
+const progressA  = () => atom(0);
+const txtUrlA    = () => atom<string | null>(null);
+const infoLineA  = () => atom("");
+const errorMsgA  = () => atom("");
+
 export default function BulkUpload() {
   const { data: session } = useSession();
   const { push } = useToast();
   const [, setNeedsRefresh] = useAtom(filesNeedsRefreshAtom);
 
-  const [phase, setPhase] = useState<Phase>("idle");
-  const [file, setFile] = useState<File | null>(null);
-  const [progress, setProgress] = useState(0);
-  const [txtUrl, setTxtUrl] = useState<string | null>(null);
-  const [infoLine, setInfoLine] = useState<string>(""); // “95/100 succeeded | 5 failed”
-  const [errorMsg, setErr] = useState("");
+  /* create atoms once per mount */
+  const [phase,     setPhase]     = useAtom(useMemo(phaseA, []));
+  const [file,      setFile]      = useAtom(useMemo(fileA, []));
+  const [progress,  setProgress]  = useAtom(useMemo(progressA, []));
+  const [txtUrl,    setTxtUrl]    = useAtom(useMemo(txtUrlA, []));
+  const [infoLine,  setInfoLine]  = useAtom(useMemo(infoLineA, []));
+  const [errorMsg,  setErr]       = useAtom(useMemo(errorMsgA, []));
 
   /* revoke blob when component unmounts or new TXT arrives */
-  useEffect(() => {
-    return () => { txtUrl && URL.revokeObjectURL(txtUrl); };
-  }, [txtUrl]);
+  useEffect(() => () => { txtUrl && URL.revokeObjectURL(txtUrl); }, [txtUrl]);
 
   /* ---------------- handlers ---------------- */
   const onFileChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -79,7 +93,7 @@ export default function BulkUpload() {
     });
 
     xhr.onload = () => {
-      /* always refresh the viewer, no matter how we parse the response */
+      /* always refresh the viewer */
       setNeedsRefresh(true);
 
       if (xhr.status < 200 || xhr.status >= 300) {
@@ -101,7 +115,7 @@ export default function BulkUpload() {
             ? data.failed.length + data.success
             : (data.failed as number) + data.success);
 
-        /* build result text (use server-supplied version if given) */
+        /* build result text (use server-supplied if present) */
         let txt = data.result_text ?? "";
         if (!txt) {
           txt = `${data.success}/${total} success\n`;
@@ -116,9 +130,11 @@ export default function BulkUpload() {
 
         const blob = new Blob([txt], { type: "text/plain" });
         setTxtUrl(URL.createObjectURL(blob));
-        setInfoLine(`${data.success}/${total} succeeded | ${
-          Array.isArray(data.failed) ? data.failed.length : data.failed
-        } failed`);
+        setInfoLine(
+          `${data.success}/${total} succeeded | ${
+            Array.isArray(data.failed) ? data.failed.length : data.failed
+          } failed`
+        );
         setPhase("done");
         push({ title: "Bulk upload finished", variant: "success" });
       } catch {
