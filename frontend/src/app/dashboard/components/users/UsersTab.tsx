@@ -1,29 +1,24 @@
 "use client";
 
 import { atom, useAtom } from "jotai";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
-import * as Select from "@radix-ui/react-select";
-import * as AlertDialog from "@radix-ui/react-alert-dialog";
-import * as Tooltip from "@radix-ui/react-tooltip";
-import {
-  BiChevronDown,
-  BiChevronUp,
-  BiCheck,
-  BiTrash,
-} from "react-icons/bi";
+import { BiTrash } from "react-icons/bi";
+import { FiLoader } from "react-icons/fi";
 import { cn } from "@/utils/cn";
 import { ByteValueTooltip } from "../groups/ByteValueTooltip";
-import { useToast } from "@/providers/toast-provider";
+import { useToast } from "@/lib/toast";
 import ViewUserFilesDialog from "./ViewUserFilesDialog";
 import { api, ApiError } from "@/lib/api";
+import MoveUserSelect from "./MoveUserSelect";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { Select, SelectOption } from "@/components/ui/Select";
 
-/* ---------- Types shared with backend ---------- */
+/* ---------- Types ---------- */
 interface GroupItem {
   id: number;
   name: string;
 }
-
 interface UserItem {
   id: number;
   username: string;
@@ -34,45 +29,42 @@ interface UserItem {
 }
 
 /* ---------- Local atoms ---------- */
-const loadingAtom   = atom(false);
-const errorMsgAtom  = atom("");
-const usersAtom     = atom<UserItem[]>([]);
-const groupsAtom    = atom<GroupItem[]>([]);
+const loadingAtom    = atom(false);
+const errorMsgAtom   = atom("");
+const usersAtom      = atom<UserItem[]>([]);
+const groupsAtom     = atom<GroupItem[]>([]);
 const hasFetchedAtom = atom(false);
 
 /* ---------- helpers ---------- */
-const EXCLUDE = ["SUPER_ADMIN", "GUEST"]; // filter out special groups
+const EXCLUDE = ["SUPER_ADMIN", "GUEST"];
+const isSuperAdmin = (u: UserItem) => u.group?.name === "SUPER_ADMIN";
 
 export default function UsersTab() {
   const { data: session } = useSession();
-  const { push } = useToast();
+  const { push }          = useToast();
 
-  const [loading, setLoading]     = useAtom(loadingAtom);
-  const [errorMsg, setErrorMsg]   = useAtom(errorMsgAtom);
-  const [users, setUsers]         = useAtom(usersAtom);
-  const [groups, setGroups]       = useAtom(groupsAtom);
-  const [hasFetched, setHasFetched] = useAtom(hasFetchedAtom);
+  const [loading, setLoading]   = useAtom(loadingAtom);
+  const [errorMsg, setError]    = useAtom(errorMsgAtom);
+  const [users, setUsers]       = useAtom(usersAtom);
+  const [groups, setGroups]     = useAtom(groupsAtom);
+  const [hasFetched, setFetched] = useAtom(hasFetchedAtom);
 
-  /* ---------- initial fetch ---------- */
+  /* ---------- first fetch ---------- */
   useEffect(() => {
     if (!session?.accessToken || hasFetched) return;
     void fetchAll();
-    setHasFetched(true);
+    setFetched(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.accessToken, hasFetched]);
 
-  /* ------------------------------------------------------------------ */
   async function fetchAll() {
-    setLoading(true);
-    setErrorMsg("");
+    setLoading(true);  setError("");
     try {
-      /* 1) users */
       const userData = await api<UserItem[]>("/admin/users", {
         token: session?.accessToken,
       });
       setUsers(userData);
 
-      /* 2) groups (filter special) */
       const groupData = await api<any[]>("/admin/groups", {
         token: session?.accessToken,
       });
@@ -81,306 +73,168 @@ export default function UsersTab() {
           .filter((g) => !EXCLUDE.includes(g.name))
           .map(({ id, name }) => ({ id, name })),
       );
-    } catch (err) {
-      const msg =
-        err instanceof ApiError ? err.message : "Error loading data";
-      setErrorMsg(msg);
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "Load error";
+      setError(msg);
     } finally {
       setLoading(false);
     }
   }
 
-  /* ------------------------------------------------------------------ */
+  /* ---------- mutations ---------- */
   async function handleGroupChange(userId: number, newGroupId: number) {
-    setLoading(true);
-    setErrorMsg("");
+    setLoading(true); setError("");
     try {
       const updated = await api<UserItem>(
         `/admin/users/${userId}/group`,
-        {
-          method: "PUT",
-          token: session?.accessToken,
-          json : { group_id: newGroupId },
-        },
+        { method: "PUT", token: session?.accessToken, json: { group_id: newGroupId } },
       );
-      setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
-      push({ title: "Group updated", description: updated.username, variant: "success" });
-    } catch (err) {
-      const msg = err instanceof ApiError ? err.message : "Error updating group";
-      setErrorMsg(msg);
+      setUsers((p) => p.map((u) => (u.id === updated.id ? updated : u)));
+      push({ title: "Group updated", variant: "success" });
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "Update failed";
+      setError(msg);
       push({ title: "Update failed", variant: "error" });
     } finally {
       setLoading(false);
     }
   }
 
-  /* ------------------------------------------------------------------ */
-  async function handleDeleteUser(
-    userId: number,
-    deleteFiles: boolean,
-    close: () => void,
-  ) {
-    setLoading(true);
-    setErrorMsg("");
+  async function deleteUser(user: UserItem, deleteFiles: boolean) {
+    setLoading(true); setError("");
     try {
-      await api<void>(
-        `/admin/users/${userId}?delete_files=${deleteFiles}`,
+      await api(
+        `/admin/users/${user.id}?delete_files=${deleteFiles}`,
         { method: "DELETE", token: session?.accessToken },
       );
-      setUsers((prev) => prev.filter((u) => u.id !== userId));
+      setUsers((p) => p.filter((u) => u.id !== user.id));
       push({ title: "User deleted", variant: "success" });
-      close();
-    } catch (err) {
-      const msg = err instanceof ApiError ? err.message : "Error deleting user";
-      setErrorMsg(msg);
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "Delete failed";
+      setError(msg);
       push({ title: "Delete failed", variant: "error" });
     } finally {
       setLoading(false);
     }
   }
 
-  /* ---------- helpers ---------- */
-  const isSuperAdmin = (u: UserItem) => u.group?.name === "SUPER_ADMIN";
+  /* ---------- Select options ---------- */
+  const groupOpts: SelectOption[] = groups.map((g) => ({
+    value: g.id.toString(),
+    label: g.name,
+  }));
 
-  /* ------------------------------------------------------------------ */
-  /*                                UI                                  */
   /* ------------------------------------------------------------------ */
   return (
-    <Tooltip.Provider delayDuration={100} skipDelayDuration={0}>
-      <div
-        className={cn(
-          "p-4 bg-theme-100/25 dark:bg-theme-900/25",
-          "rounded-lg border border-theme-200/50 dark:border-theme-800/50",
-        )}
-      >
-        <h3 className="text-lg font-medium text-theme-700 dark:text-theme-300 mb-2">
-          Users Management
-        </h3>
-        <p className="text-sm text-theme-500 dark:text-theme-400 mb-4">
-          View all accounts, change groups (except SUPER_ADMIN &amp; GUEST), or
-          remove users.
-        </p>
+    <div className={cn(
+      "p-4 bg-theme-100/25 dark:bg-theme-900/25 rounded-lg",
+      "border border-theme-200/50 dark:border-theme-800/50",
+    )}>
+      <h3 className="text-lg font-medium mb-2">Users Management</h3>
 
-        {errorMsg && (
-          <div
+      {errorMsg && (
+        <p className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 mb-4 rounded">
+          {errorMsg}
+        </p>
+      )}
+
+      {loading && users.length === 0 && <p>Loading…</p>}
+
+      <ul className="space-y-3">
+        {users.map((u) => (
+          <li
+            key={u.id}
             className={cn(
-              "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400",
-              "p-3 rounded mb-4 border border-red-200/50 dark:border-red-800/50",
+              "p-4 rounded-lg border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4",
+              "border-theme-200/50 dark:border-theme-800/50 bg-theme-50/20 dark:bg-theme-900/20",
             )}
           >
-            {errorMsg}
-          </div>
-        )}
+            {/* ---- left ---- */}
+            <div className="space-y-1 flex-1">
+              <p className="font-medium">{u.username}</p>
+              <p className="text-sm text-theme-600 dark:text-theme-400">
+                {u.email || "(no email)"}
+              </p>
+              <p className="text-sm text-theme-600 dark:text-theme-400">
+                Files: {u.file_count} – <ByteValueTooltip bytes={u.storage_bytes} />
+              </p>
+            </div>
 
-        {loading ? (
-          <p className="text-theme-600 dark:text-theme-400">Loading...</p>
-        ) : users.length === 0 ? (
-          <p className="text-theme-600 dark:text-theme-400">No users found.</p>
-        ) : (
-          <ul className="space-y-3">
-            {users.map((u) => (
-              <li
-                key={u.id}
-                className={cn(
-                  "p-4 rounded-lg border",
-                  "border-theme-200/50 dark:border-theme-800/50",
-                  "bg-theme-50/20 dark:bg-theme-900/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4",
-                )}
-              >
-                {/* LEFT block */}
-                <div className="space-y-1 flex-1">
-                  <p className="font-medium text-theme-800 dark:text-theme-200">
-                    {u.username}
-                    {isSuperAdmin(u) && (
-                      <span className="ml-2 text-xs px-2 py-0.5 rounded bg-theme-300 dark:bg-theme-700 text-theme-900 dark:text-theme-100">
-                        ADMIN
-                      </span>
-                    )}
-                  </p>
-                  <p className="text-sm text-theme-600 dark:text-theme-400">
-                    {u.email || "(no email)"}
-                  </p>
-                  <p className="text-sm text-theme-600 dark:text-theme-400">
-                    Files:&nbsp;
-                    {u.file_count} –&nbsp;
-                    <ByteValueTooltip bytes={u.storage_bytes} />
-                  </p>
-                </div>
+            {/* ---- right ---- */}
+            <div className="flex items-center gap-3">
+              <ViewUserFilesDialog
+                userId={u.id}
+                username={u.username}
+                sessionToken={session?.accessToken ?? ""}
+              />
 
-                {/* RIGHT controls */}
-                <div className="flex items-center gap-3">
-                  {!isSuperAdmin(u) && (
-                    <ViewUserFilesDialog
-                      userId={u.id}
-                      username={u.username}
-                      sessionToken={session?.accessToken ?? ""}
-                    />
-                  )}
+              {/* group select (skip SUPER_ADMIN) */}
+              {isSuperAdmin(u) ? (
+                <span className="text-sm">{u.group?.name}</span>
+              ) : (
+                <Select
+                  minWidth="7rem"
+                  value={(u.group?.id ?? "").toString()}
+                  onValueChange={(v) => handleGroupChange(u.id, +v)}
+                  options={groupOpts}
+                />
+              )}
 
-                  {/* Group select */}
-                  {isSuperAdmin(u) ? (
-                    <span className="text-theme-700 dark:text-theme-300 text-sm">
-                      {u.group?.name}
-                    </span>
-                  ) : (
-                    <Select.Root
-                      value={(u.group?.id ?? "").toString()}
-                      onValueChange={(val) =>
-                        handleGroupChange(u.id, parseInt(val, 10))
-                      }
-                    >
-                      <Select.Trigger
-                        className={cn(
-                          "inline-flex items-center justify-between min-w-[7rem] px-3 py-1.5 rounded border",
-                          "border-theme-200 dark:border-theme-700",
-                          "bg-theme-50 dark:bg-theme-800",
-                          "text-theme-900 dark:text-theme-100 text-sm",
-                          "focus:outline-none",
-                        )}
-                      >
-                        <Select.Value />
-                        <Select.Icon>
-                          <BiChevronDown className="h-4 w-4 text-theme-500" />
-                        </Select.Icon>
-                      </Select.Trigger>
+              {/* delete */}
+              {!isSuperAdmin(u) && (
+                <DeleteUserButton user={u} onDelete={deleteUser} />
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
 
-                      <Select.Portal>
-                        <Select.Content
-                          side="bottom"
-                          className={cn(
-                            "overflow-hidden rounded-lg shadow-lg z-50",
-                            "bg-theme-50 dark:bg-theme-900",
-                            "border border-theme-200 dark:border-theme-700",
-                          )}
-                        >
-                          <Select.ScrollUpButton className="flex items-center justify-center py-1">
-                            <BiChevronUp />
-                          </Select.ScrollUpButton>
-
-                          <Select.Viewport className="max-h-60">
-                            {groups.map((g) => (
-                              <Select.Item
-                                key={g.id}
-                                value={g.id.toString()}
-                                className={cn(
-                                  "flex items-center px-3 py-2 text-sm select-none cursor-pointer",
-                                  "text-theme-700 dark:text-theme-300",
-                                  "radix-state-checked:bg-theme-200 dark:radix-state-checked:bg-theme-700",
-                                  "hover:bg-theme-100 dark:hover:bg-theme-800",
-                                )}
-                              >
-                                <Select.ItemText>{g.name}</Select.ItemText>
-                                <Select.ItemIndicator className="ml-auto">
-                                  <BiCheck />
-                                </Select.ItemIndicator>
-                              </Select.Item>
-                            ))}
-                          </Select.Viewport>
-
-                          <Select.ScrollDownButton className="flex items-center justify-center py-1">
-                            <BiChevronDown />
-                          </Select.ScrollDownButton>
-                        </Select.Content>
-                      </Select.Portal>
-                    </Select.Root>
-                  )}
-
-                  {/* Delete user */}
-                  {!isSuperAdmin(u) && (
-                    <DeleteUserButton
-                      user={u}
-                      onDelete={(delFiles, close) =>
-                        handleDeleteUser(u.id, delFiles, close)
-                      }
-                    />
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </Tooltip.Provider>
+      {loading && users.length > 0 && (
+        <div className="flex items-center gap-2 mt-4 text-theme-600">
+          <FiLoader className="animate-spin" /> working…
+        </div>
+      )}
+    </div>
   );
 }
 
-/* ---------- helper: delete button component ---------- */
+/* ------------------------------------------------------------------ */
+/*          per-row Delete button  — uses shared ConfirmDialog         */
+/* ------------------------------------------------------------------ */
 function DeleteUserButton({
   user,
   onDelete,
 }: {
   user: UserItem;
-  onDelete: (deleteFiles: boolean, close: () => void) => void;
+  onDelete: (u: UserItem, deleteFiles: boolean) => void;
 }) {
-  const [deleteFiles, setDeleteFiles] = useAtom(useMemo(() => atom(false), []));
-  const [open, setOpen]               = useAtom(useMemo(() => atom(false), []));
+  const [deleteFiles, setDel] = useState(false);
 
   return (
-    <AlertDialog.Root open={open} onOpenChange={setOpen}>
-      <AlertDialog.Trigger asChild>
+    <ConfirmDialog
+      title={`Delete “${user.username}”?`}
+      description="This action cannot be undone."
+      danger
+      trigger={
         <button
-          className={cn(
-            "p-2 rounded bg-red-600 text-white hover:bg-red-700 transition",
-          )}
+          className="p-2 rounded bg-red-600 text-white hover:bg-red-700"
+          title="Delete user"
         >
           <BiTrash className="h-4 w-4" />
         </button>
-      </AlertDialog.Trigger>
-
-      <AlertDialog.Portal>
-        <AlertDialog.Overlay className="bg-black/30 backdrop-blur-sm fixed inset-0 z-50" />
-        <AlertDialog.Content
-          className={cn(
-            "fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2",
-            "bg-theme-50 dark:bg-theme-900 rounded-lg shadow-lg max-w-sm w-full p-6",
-          )}
-        >
-          <AlertDialog.Title className="text-lg font-medium text-red-600 dark:text-red-400 mb-2">
-            Delete user “{user.username}”?
-          </AlertDialog.Title>
-          <AlertDialog.Description className="text-sm text-theme-600 dark:text-theme-300 mb-4">
-            This action cannot be undone.
-          </AlertDialog.Description>
-
-          <div className="mb-4 flex items-center space-x-2">
-            <input
-              id={`del_${user.id}`}
-              type="checkbox"
-              checked={deleteFiles}
-              onChange={(e) => setDeleteFiles(e.target.checked)}
-              className="cursor-pointer"
-            />
-            <label
-              htmlFor={`del_${user.id}`}
-              className="text-sm text-theme-700 dark:text-theme-200 cursor-pointer"
-            >
-              Also delete all uploaded files?
-            </label>
-          </div>
-
-          <div className="flex justify-end gap-2">
-            <AlertDialog.Cancel asChild>
-              <button
-                className={cn(
-                  "px-4 py-2 rounded border border-theme-300 dark:border-theme-700",
-                )}
-              >
-                Cancel
-              </button>
-            </AlertDialog.Cancel>
-            <AlertDialog.Action asChild>
-              <button
-                onClick={() => onDelete(deleteFiles, () => setOpen(false))}
-                className={cn(
-                  "px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700",
-                )}
-              >
-                Delete
-              </button>
-            </AlertDialog.Action>
-          </div>
-        </AlertDialog.Content>
-      </AlertDialog.Portal>
-    </AlertDialog.Root>
+      }
+      confirmLabel="Delete"
+      onConfirm={() => onDelete(user, deleteFiles)}
+    >
+      <label className="flex items-center gap-2 text-sm mt-1">
+        <input
+          type="checkbox"
+          checked={deleteFiles}
+          onChange={(e) => setDel(e.target.checked)}
+          className="cursor-pointer"
+        />
+        Also delete all uploaded files?
+      </label>
+    </ConfirmDialog>
   );
 }

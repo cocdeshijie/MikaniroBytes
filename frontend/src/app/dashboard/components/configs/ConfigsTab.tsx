@@ -3,16 +3,12 @@
 import { useEffect, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { atom, useAtom } from "jotai";
-import * as Select from "@radix-ui/react-select";
 import * as Checkbox from "@radix-ui/react-checkbox";
-import {
-  BiChevronDown,
-  BiChevronUp,
-  BiCheck,
-} from "react-icons/bi";
+import { BiCheck } from "react-icons/bi";
 import { cn } from "@/utils/cn";
-import { useToast } from "@/providers/toast-provider";
+import { useToast } from "@/lib/toast";
 import { api, ApiError } from "@/lib/api";
+import { Select, SelectOption } from "@/components/ui/Select";
 
 /* ---------- TYPES ---------- */
 interface GroupItem { id: number; name: string }
@@ -29,10 +25,10 @@ const fetchedA = atom(false);
 const errorA   = atom("");
 const groupsA  = atom<GroupItem[]>([]);
 const configA  = atom<SystemSettingsData>({
-  registration_enabled   : true,
-  public_upload_enabled  : false,
-  default_user_group_id  : null,
-  upload_path_template   : "{Y}/{m}",
+  registration_enabled  : true,
+  public_upload_enabled : false,
+  default_user_group_id : null,
+  upload_path_template  : "{Y}/{m}",
 });
 
 /* =================================================================== */
@@ -46,7 +42,7 @@ export default function ConfigsTab() {
   const [groups, setGroups]   = useAtom(groupsA);
   const [config, setConfig]   = useAtom(configA);
 
-  /* ---------- first fetch ---------- */
+  /* ---------- initial fetch ---------- */
   useEffect(() => {
     if (!session?.accessToken || fetched) return;
     void fetchAll();
@@ -68,7 +64,7 @@ export default function ConfigsTab() {
         .map(({ id, name }) => ({ id, name }));
       setGroups(normal);
 
-      /* ensure default id is valid */
+      /* ensure default id valid */
       if (
         normal.length &&
         !normal.some((g) => g.id === settings.default_user_group_id)
@@ -78,8 +74,7 @@ export default function ConfigsTab() {
 
       setFetched(true);
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : "Load error";
-      setError(msg);
+      setError(e instanceof ApiError ? e.message : "Load error");
     } finally {
       setLoading(false);
     }
@@ -102,8 +97,7 @@ export default function ConfigsTab() {
       setConfig(updated);
       push({ title: "Settings updated", variant: "success" });
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : "Save error";
-      setError(msg);
+      setError(e instanceof ApiError ? e.message : "Save error");
       push({ title: "Save failed", variant: "error" });
     } finally {
       setLoading(false);
@@ -117,16 +111,18 @@ export default function ConfigsTab() {
     </div>
   ),[]);
 
-  /* ------------------------------------------------------------------ */
-  /*                                UI                                  */
+  /* ---------- Select options ---------- */
+  const groupOptions: SelectOption[] = groups.map((g) => ({
+    value: g.id.toString(),
+    label: g.name,
+  }));
+
   /* ------------------------------------------------------------------ */
   return (
-    <div
-      className={cn(
-        "p-4 bg-theme-100/25 dark:bg-theme-900/25 rounded-lg",
-        "border border-theme-200/50 dark:border-theme-800/50",
-      )}
-    >
+    <div className={cn(
+      "p-4 bg-theme-100/25 dark:bg-theme-900/25 rounded-lg",
+      "border border-theme-200/50 dark:border-theme-800/50",
+    )}>
       <h3 className="text-lg font-medium mb-2">Site Configurations</h3>
 
       {errorMsg && (
@@ -151,52 +147,12 @@ export default function ConfigsTab() {
                 <label className="block mb-1 text-sm text-theme-600 dark:text-theme-400">
                   Default User Group
                 </label>
-                <Select.Root
+                <Select
                   value={(config.default_user_group_id ?? groups[0].id).toString()}
                   onValueChange={changeGroup}
-                >
-                  <Select.Trigger
-                    className={cn(
-                      "inline-flex items-center justify-between w-full px-3 py-2 rounded border",
-                      "border-theme-200 dark:border-theme-700 bg-theme-50 dark:bg-theme-800",
-                    )}
-                  >
-                    <Select.Value />
-                    <Select.Icon><BiChevronDown className="h-4 w-4" /></Select.Icon>
-                  </Select.Trigger>
-
-                  <Select.Portal>
-                    <Select.Content
-                      side="bottom"
-                      className={cn(
-                        "overflow-hidden rounded-lg shadow-lg z-50 bg-theme-50 dark:bg-theme-900",
-                        "border border-theme-200 dark:border-theme-700",
-                      )}
-                    >
-                      <Select.ScrollUpButton className="flex items-center justify-center py-1">
-                        <BiChevronUp />
-                      </Select.ScrollUpButton>
-                      <Select.Viewport className="max-h-60">
-                        {groups.map((g)=>(
-                          <Select.Item
-                            key={g.id}
-                            value={g.id.toString()}
-                            className={cn(
-                              "flex items-center px-3 py-2 text-sm cursor-pointer",
-                              "radix-state-checked:bg-theme-200 dark:radix-state-checked:bg-theme-700",
-                            )}
-                          >
-                            <Select.ItemText>{g.name}</Select.ItemText>
-                            <Select.ItemIndicator className="ml-auto"><BiCheck/></Select.ItemIndicator>
-                          </Select.Item>
-                        ))}
-                      </Select.Viewport>
-                      <Select.ScrollDownButton className="flex items-center justify-center py-1">
-                        <BiChevronDown />
-                      </Select.ScrollDownButton>
-                    </Select.Content>
-                  </Select.Portal>
-                </Select.Root>
+                  options={groupOptions}
+                  minWidth="100%"
+                />
               </div>
             )}
 
@@ -218,7 +174,7 @@ export default function ConfigsTab() {
                 )}
               />
               <p className="mt-1 text-xs text-theme-500 dark:text-theme-400">
-                Use&nbsp;<code>{`{Y}`}</code>,&nbsp;<code>{`{m}`}</code>,&nbsp;<code>{`{d}`}</code>,&nbsp;<code>{`{slug}`}</code> etc.
+                Use&nbsp;<code>{`{Y}`}</code>,&nbsp;<code>{`{m}`}</code>,&nbsp;<code>{`{d}`}</code>,&nbsp;<code>{`{slug}`}</code> …
               </p>
             </div>
           </div>
@@ -236,7 +192,7 @@ export default function ConfigsTab() {
   );
 }
 
-/* ---------- toggle ---------- */
+/* ---------- tiny Toggle component ---------- */
 function Toggle({
   label, checked, onChange,
 }: { label:string; checked:boolean; onChange:(v:boolean)=>void }) {
@@ -247,13 +203,15 @@ function Toggle({
         checked={checked}
         onCheckedChange={(v)=>onChange(!!v)}
         className={cn(
-          "h-5 w-5 shrink-0 rounded border",
+          "h-5 w-5 shrink-0 rounded border cursor-pointer",
           "border-theme-400 dark:border-theme-600 bg-white dark:bg-theme-800",
-          "flex items-center justify-center cursor-pointer",
+          "flex items-center justify-center",
           "data-[state=checked]:bg-theme-500",
         )}
       >
-        <Checkbox.Indicator><BiCheck className="h-4 w-4 text-white"/></Checkbox.Indicator>
+        <Checkbox.Indicator>
+          <BiCheck className="h-4 w-4 text-white" />
+        </Checkbox.Indicator>
       </Checkbox.Root>
     </div>
   );

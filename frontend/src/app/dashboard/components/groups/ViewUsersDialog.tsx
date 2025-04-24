@@ -1,15 +1,16 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { atom, useAtom } from "jotai";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Tooltip from "@radix-ui/react-tooltip";
-import { FiX } from "react-icons/fi";
+import { FiX, FiFolder } from "react-icons/fi";
+import { BiTrash } from "react-icons/bi";
 import { cn } from "@/utils/cn";
-import { useToast } from "@/providers/toast-provider";
+import { useToast } from "@/lib/toast";
 import ViewUserFilesDialog from "../users/ViewUserFilesDialog";
-import ConfirmDeleteUserDialog from "../users/ConfirmDeleteUserDialog";
 import MoveUserSelect from "../users/MoveUserSelect";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { api, ApiError } from "@/lib/api";
 
 /* ---------- local types ---------- */
@@ -40,6 +41,7 @@ export default function ViewUsersDialog({
 }) {
   const { push } = useToast();
 
+  /* ---- local atoms (scoped per-dialog) ---- */
   const openA    = useMemo(() => atom(false), [group.id]);
   const loadingA = useMemo(() => atom(false), [group.id]);
   const errorA   = useMemo(() => atom(""), [group.id]);
@@ -52,7 +54,7 @@ export default function ViewUsersDialog({
   const [users, setUsers]     = useAtom(usersA);
   const [groups, setGroups]   = useAtom(groupsA);
 
-  /* ---------- fetch each time dialog opens ---------- */
+  /* ---------- pull data whenever dialog opens ---------- */
   useEffect(() => {
     if (!open) return;
     void fetchAll();
@@ -76,8 +78,7 @@ export default function ViewUsersDialog({
           .map(({ id, name }) => ({ id, name })),
       );
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : "Load error";
-      setError(msg);
+      setError(e instanceof ApiError ? e.message : "Load error");
     } finally {
       setLoading(false);
     }
@@ -108,9 +109,24 @@ export default function ViewUsersDialog({
     }
   }
 
-  function localDelete(userId: number) {
-    setUsers((p) => p.filter((u) => u.id !== userId));
-    onChanged();
+  async function deleteUser(user: UserItem, deleteFiles: boolean) {
+    setLoading(true);
+    setError("");
+    try {
+      await api(
+        `/admin/users/${user.id}?delete_files=${deleteFiles}`,
+        { method: "DELETE", token: sessionToken },
+      );
+      setUsers((p) => p.filter((u) => u.id !== user.id));
+      push({ title: "User deleted", variant: "success" });
+      onChanged();
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "Delete failed";
+      setError(msg);
+      push({ title: "Delete failed", variant: "error" });
+    } finally {
+      setLoading(false);
+    }
   }
 
   /* ------------------------------------------------------------------ */
@@ -159,12 +175,11 @@ export default function ViewUsersDialog({
                   <li
                     key={u.id}
                     className={cn(
-                      "p-4 rounded-lg border bg-theme-50/20 dark:bg-theme-900/20",
-                      "border-theme-200/50 dark:border-theme-800/50",
-                      "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4",
+                      "p-4 rounded-lg border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4",
+                      "border-theme-200/50 dark:border-theme-800/50 bg-theme-50/20 dark:bg-theme-900/20",
                     )}
                   >
-                    {/* LEFT */}
+                    {/* LEFT column */}
                     <div className="space-y-1 flex-1">
                       <p className="font-medium">
                         {u.username}
@@ -180,7 +195,7 @@ export default function ViewUsersDialog({
                       </p>
                     </div>
 
-                    {/* RIGHT */}
+                    {/* RIGHT controls (skip immutable) */}
                     {!isImmutable(u) && (
                       <div className="flex items-center gap-3">
                         <ViewUserFilesDialog
@@ -188,16 +203,15 @@ export default function ViewUsersDialog({
                           username={u.username}
                           sessionToken={sessionToken}
                         />
+
                         <MoveUserSelect
                           currentGroupId={group.id}
                           groups={groups}
                           onSelect={(gid) => moveUser(u.id, gid)}
                         />
-                        <ConfirmDeleteUserDialog
-                          user={u}
-                          sessionToken={sessionToken}
-                          afterDelete={localDelete}
-                        />
+
+                        {/* shared confirm dialog for delete */}
+                        <DeleteUserBtn user={u} onDelete={deleteUser} />
                       </div>
                     )}
                   </li>
@@ -211,11 +225,48 @@ export default function ViewUsersDialog({
   );
 }
 
-/* helper badge */
+/* ---------- helper sub-components ---------- */
 function Label({ children }: { children: React.ReactNode }) {
   return (
     <span className="ml-2 text-[10px] px-2 py-0.5 rounded bg-theme-300 dark:bg-theme-700">
       {children}
     </span>
+  );
+}
+
+function DeleteUserBtn({
+  user,
+  onDelete,
+}: {
+  user: UserItem;
+  onDelete: (user: UserItem, deleteFiles: boolean) => void;
+}) {
+  const [deleteFiles, setDel] = useState(false);
+
+  return (
+    <ConfirmDialog
+      title={`Delete “${user.username}”?`}
+      description="This action cannot be undone."
+      danger
+      trigger={
+        <button
+          className="p-2 rounded bg-red-600 text-white hover:bg-red-700"
+          title="Delete user"
+        >
+          <BiTrash className="h-4 w-4" />
+        </button>
+      }
+      confirmLabel="Delete"
+      onConfirm={() => onDelete(user, deleteFiles)}
+    >
+      <label className="flex items-center gap-2 text-sm mt-1">
+        <input
+          type="checkbox"
+          checked={deleteFiles}
+          onChange={(e) => setDel(e.target.checked)}
+        />
+        Also delete all uploaded files
+      </label>
+    </ConfirmDialog>
   );
 }
