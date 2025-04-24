@@ -15,23 +15,24 @@ import {
   loadingAtom,
   errorAtom,
   SessionItem,
+  UserInfo,
 } from "@/atoms/auth";
 import { useToast } from "@/lib/toast";
 
 /* ------------------------------------------------------------------ */
 /*                       LOCAL (page-scoped) ATOMS                    */
 /* ------------------------------------------------------------------ */
-const oldPwA        = atom("");
-const newPwA        = atom("");
-const hasFetchedA   = atom(false);           // ⇠ NEW ­— first fetch done?
+const oldPwA   = atom("");
+const newPwA   = atom("");
+const fetchedA = atom(false);
 
 /* ================================================================== */
 /*                             COMPONENT                              */
 /* ================================================================== */
-export default function UserPage() {
-  const router                = useRouter();
+export default function ProfilePage() {
+  const router                    = useRouter();
   const { data: session, status } = useSession();
-  const { push }              = useToast();
+  const { push }                  = useToast();
 
   const [userInfo, setUserInfo] = useAtom(userInfoAtom);
   const [sessions, setSessions] = useAtom(sessionsAtom);
@@ -40,34 +41,52 @@ export default function UserPage() {
 
   const [oldPw, setOldPw]       = useAtom(oldPwA);
   const [newPw, setNewPw]       = useAtom(newPwA);
-  const [hasFetched, setFetched] = useAtom(hasFetchedA);
+  const [fetched, setFetched]   = useAtom(fetchedA);
 
-  /* ---------------- redirect if unauthenticated ---------------- */
+  /* ---------- redirect if unauthenticated ---------- */
   useEffect(() => {
     if (status === "unauthenticated") router.replace("/auth/login");
   }, [status, router]);
 
-  /* ---------------- fetch user info + sessions ----------------- */
+  /* ---------- first load: populate user + sessions -- */
   useEffect(() => {
-    if (status !== "authenticated" || !session?.accessToken || hasFetched) return;
+    if (status !== "authenticated" || !session || fetched) return;
+
+    /* Basic info already in the session (thanks to batch-2) */
+    const basic: UserInfo = {
+      id      : Number(session.user.id),
+      username: session.user.username,
+      email   : session.user.email ?? undefined,
+    };
+    setUserInfo(basic);
+
+    /* Load active sessions from backend */
     (async () => {
-      setLoading(true); setError("");
+      setLoading(true);
+      setError("");
       try {
-        setUserInfo(await api("/auth/me", { token: session.accessToken }));
-        setSessions(await api("/auth/sessions", { token: session.accessToken }));
-        setFetched(true);
+        const list = await api<SessionItem[]>("/auth/sessions", {
+          token: session.accessToken,
+        });
+        setSessions(list);
       } catch (e: any) {
-        setError(e.message);
-      } finally { setLoading(false); }
+        setError(e.message ?? "Failed to load sessions");
+      } finally {
+        setLoading(false);
+        setFetched(true);
+      }
     })();
-  }, [status, session?.accessToken, hasFetched]);
+  }, [status, session, fetched, setUserInfo, setLoading, setError, setSessions]);
 
   /* ------------------------------------------------------------------
    *                               HELPERS
    * ------------------------------------------------------------------ */
   const revokeSession = async (sessionId: number) => {
     try {
-      await api(`/auth/sessions/${sessionId}`, { method: "DELETE", token: session?.accessToken });
+      await api(`/auth/sessions/${sessionId}`, {
+        method: "DELETE",
+        token: session?.accessToken,
+      });
       setSessions((p) => p.filter((s) => s.session_id !== sessionId));
       push({ title: "Session revoked", variant: "success" });
     } catch (e: any) {
@@ -78,7 +97,10 @@ export default function UserPage() {
   const revokeAll = async () => {
     if (!confirm("Logout from all devices?")) return;
     try {
-      await api("/auth/logout-all", { method: "POST", token: session?.accessToken });
+      await api("/auth/logout-all", {
+        method: "POST",
+        token: session?.accessToken,
+      });
       setSessions([]);
       push({ title: "Logged out everywhere", variant: "success" });
     } catch (e: any) {
@@ -90,49 +112,38 @@ export default function UserPage() {
     e.preventDefault();
     try {
       await api("/auth/change-password", {
-        method: "POST",
-        token : session?.accessToken,
-        json  : { old_password: oldPw, new_password: newPw },
+        method : "POST",
+        token  : session?.accessToken,
+        json   : { old_password: oldPw, new_password: newPw },
       });
       push({ title: "Password updated", variant: "success" });
-      setOldPw(""); setNewPw("");
+      setOldPw("");
+      setNewPw("");
     } catch (e: any) {
       push({ title: "Password change failed", description: e.message, variant: "error" });
     }
   };
 
-  /* ---------------- skeleton during first load ---------------- */
+  /* ---------- skeleton shown until both requests finish ---------- */
   const Skeleton = useMemo(
     () => (
       <div className="space-y-6 md:grid md:grid-cols-12 md:gap-6 md:space-y-0 animate-pulse">
-        {/* left panes */}
         <div className="md:col-span-4 space-y-6">
           <div className="h-64 rounded-xl bg-theme-200/40 dark:bg-theme-800/30" />
           <div className="h-72 rounded-xl bg-theme-200/40 dark:bg-theme-800/30" />
         </div>
-        {/* right pane */}
         <div className="md:col-span-8 h-96 rounded-xl bg-theme-200/40 dark:bg-theme-800/30" />
       </div>
     ),
-    []
+    [],
   );
 
-  /* ------------------------------------------------------------------
-   *          GLOBAL loading or redirect overlays (unchanged)
-   * ------------------------------------------------------------------ */
-  if (status === "loading") {
-    return (
-      <FullPageMsg>Checking session…</FullPageMsg>
-    );
-  }
-  if (status === "unauthenticated") {
-    return (
-      <FullPageMsg>Redirecting to login…</FullPageMsg>
-    );
-  }
+  /* ---------- early return overlays ---------- */
+  if (status === "loading")          return <FullPageMsg>Checking session…</FullPageMsg>;
+  if (status === "unauthenticated")  return <FullPageMsg>Redirecting…</FullPageMsg>;
 
   /* ------------------------------------------------------------------
-   *                 MAIN LAYOUT  (skeleton -> real content)
+   *                         MAIN LAYOUT
    * ------------------------------------------------------------------ */
   return (
     <div className="min-h-screen bg-theme-50 dark:bg-theme-950">
@@ -141,9 +152,9 @@ export default function UserPage() {
 
       {/* Content */}
       <section className="relative bg-theme-50 dark:bg-theme-950">
-        <div className={cn("hidden md:block absolute inset-0 bg-theme-100 dark:bg-theme-900 opacity-20")} />
+        <div className="hidden md:block absolute inset-0 bg-theme-100 dark:bg-theme-900 opacity-20" />
         <div className="relative py-6 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          {!hasFetched ? (
+          {!fetched ? (
             Skeleton
           ) : (
             <div className="md:grid md:grid-cols-12 md:gap-6">
@@ -171,20 +182,10 @@ export default function UserPage() {
 /* ------------------------------------------------------------------ */
 /*                        REUSABLE SUB-COMPONENTS                     */
 /* ------------------------------------------------------------------ */
-
 function FullPageMsg({ children }: { children: string }) {
   return (
     <div className="min-h-screen flex items-center justify-center bg-theme-50 dark:bg-theme-950">
-      <div
-        className={cn(
-          "relative p-6 md:p-8 rounded-xl",
-          "bg-theme-100/75 dark:bg-theme-900/75 backdrop-blur-lg",
-          "ring-1 ring-theme-200/50 dark:ring-theme-700/50",
-          "shadow-lg shadow-theme-500/10 max-w-md w-full"
-        )}
-      >
-        <p className="text-theme-800 dark:text-theme-200 text-center text-lg">{children}</p>
-      </div>
+      <p className="text-theme-800 dark:text-theme-200 text-lg">{children}</p>
     </div>
   );
 }
@@ -197,7 +198,7 @@ function Header({ errorMsg }: { errorMsg: string }) {
         "relative pt-24 pb-6 md:pt-28 md:pb-8",
         "bg-gradient-to-br",
         "from-theme-500/15 via-theme-100/25 to-theme-300/15",
-        "dark:from-theme-500/15 dark:via-theme-900/25 dark:to-theme-700/15"
+        "dark:from-theme-500/15 dark:via-theme-900/25 dark:to-theme-700/15",
       )}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -205,13 +206,13 @@ function Header({ errorMsg }: { errorMsg: string }) {
           className={cn(
             "relative rounded-xl overflow-hidden backdrop-blur-sm",
             "border border-theme-200/25 dark:border-theme-700/25",
-            "shadow-lg shadow-theme-500/10 p-6 md:p-8"
+            "shadow-lg shadow-theme-500/10 p-6 md:p-8",
           )}
         >
           <h1
             className={cn(
               "text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold mb-4",
-              "text-theme-950 dark:text-theme-50 leading-tight"
+              "text-theme-950 dark:text-theme-50 leading-tight",
             )}
           >
             User Dashboard
@@ -221,7 +222,7 @@ function Header({ errorMsg }: { errorMsg: string }) {
               className={cn(
                 "bg-red-100/80 dark:bg-red-900/30",
                 "text-red-700 dark:text-red-300 p-3 my-4 rounded-lg",
-                "border border-red-200 dark:border-red-800 backdrop-blur-sm"
+                "border border-red-200 dark:border-red-800 backdrop-blur-sm",
               )}
             >
               {errorMsg}
@@ -233,7 +234,7 @@ function Header({ errorMsg }: { errorMsg: string }) {
   );
 }
 
-/* ---------- left-hand column -------------------------------------- */
+/* ---------- left column ------------------------------------------- */
 function LeftColumn({
   userInfo,
   oldPw,
@@ -242,7 +243,7 @@ function LeftColumn({
   setNewPw,
   changePw,
 }: {
-  userInfo: any;
+  userInfo: UserInfo | null;
   oldPw: string;
   newPw: string;
   setOldPw: (v: string) => void;
@@ -251,25 +252,23 @@ function LeftColumn({
 }) {
   return (
     <div className="md:col-span-4 space-y-6 mb-6 md:mb-0">
-      {/* user info card */}
+      {/* account info */}
       <div className={cardCls}>
         <div className="p-5">
           <CardHeading>Account Information</CardHeading>
           {userInfo ? (
             <div className="space-y-4">
-              <InfoRow label="User ID"      value={userInfo.id} />
-              <InfoRow label="Username"     value={userInfo.username} />
-              <InfoRow label="Email"        value={userInfo.email || "(none)"} />
+              <InfoRow label="User ID"   value={userInfo.id} />
+              <InfoRow label="Username"  value={userInfo.username} />
+              <InfoRow label="Email"     value={userInfo.email || "(none)"} />
             </div>
           ) : (
-            <p className="text-theme-600 dark:text-theme-400 italic">
-              No user information available.
-            </p>
+            <p className="italic text-theme-600 dark:text-theme-400">No info.</p>
           )}
         </div>
       </div>
 
-      {/* change password card */}
+      {/* change password */}
       <div className={cardCls}>
         <div className="p-5">
           <CardHeading>Change Password</CardHeading>
@@ -289,7 +288,7 @@ function LeftColumn({
               className={cn(
                 "w-full py-2 px-6 rounded-lg bg-theme-500 hover:bg-theme-600",
                 "text-white font-medium shadow-md shadow-theme-500/20",
-                "transition-all duration-200 transform hover:-translate-y-0.5"
+                "transition-all duration-200 transform hover:-translate-y-0.5",
               )}
             >
               Update Password
@@ -301,7 +300,7 @@ function LeftColumn({
   );
 }
 
-/* ---------- right-hand column ------------------------------------- */
+/* ---------- right column ------------------------------------------ */
 function RightColumn({
   sessions,
   revokeSession,
@@ -324,7 +323,7 @@ function RightColumn({
               className={cn(
                 "py-1.5 px-4 rounded-lg bg-red-500 hover:bg-red-600",
                 "text-white text-sm font-medium shadow-md shadow-red-500/20",
-                "transition-all duration-200"
+                "transition-all duration-200",
               )}
             >
               Logout All Devices
@@ -340,33 +339,36 @@ function RightColumn({
                   key={s.session_id}
                   className={cn(
                     "border border-theme-200/50 dark:border-theme-800/50 rounded-lg",
-                    "p-4 bg-theme-100/25 dark:bg-theme-900/25",
-                    "transition-all duration-200 hover:shadow-md"
+                    "p-4 bg-theme-100/25 dark:bg-theme-900/25 transition-all duration-200",
+                    "hover:shadow-md",
                   )}
                 >
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     {/* details */}
                     <div className="space-y-2 flex-1">
-                      <InfoRow label="Token" value={
-                        <span className="font-mono">
-                          {s.token.length > 20 ? s.token.slice(0, 20) + "…" : s.token}
-                        </span>
-                      } />
+                      <InfoRow
+                        label="Token"
+                        value={
+                          <span className="font-mono">
+                            {s.token.slice(0, 20)}…
+                          </span>
+                        }
+                      />
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-                        <InfoRow label="Device"       value={s.client_name || "Unknown"} />
-                        <InfoRow label="IP Address"   value={s.ip_address  || "N/A"} />
-                        <InfoRow label="Created"      value={new Date(s.created_at).toLocaleString()} />
-                        <InfoRow label="Last Access"  value={new Date(s.last_accessed).toLocaleString()} />
+                        <InfoRow label="Device"      value={s.client_name || "Unknown"} />
+                        <InfoRow label="IP Address"  value={s.ip_address  || "N/A"} />
+                        <InfoRow label="Created"     value={new Date(s.created_at).toLocaleString()} />
+                        <InfoRow label="Last Access" value={new Date(s.last_accessed).toLocaleString()} />
                       </div>
                     </div>
-                    {/* revoke button */}
+                    {/* revoke */}
                     <div className="md:self-center">
                       <button
                         onClick={() => revokeSession(s.session_id)}
                         className={cn(
                           "py-1.5 px-4 rounded-lg bg-red-500/80 hover:bg-red-600",
                           "text-white text-sm font-medium shadow shadow-red-500/10",
-                          "transition-all duration-200"
+                          "transition-all duration-200",
                         )}
                       >
                         Logout
@@ -392,7 +394,7 @@ const cardCls = cn(
   "rounded-xl overflow-hidden",
   "ring-2 ring-theme-200/25 dark:ring-theme-800/25",
   "bg-theme-50 dark:bg-theme-950",
-  "shadow-md shadow-theme-500/5"
+  "shadow-md shadow-theme-500/5",
 );
 
 function CardHeading({ children }: { children: string }) {
@@ -401,7 +403,7 @@ function CardHeading({ children }: { children: string }) {
       className={cn(
         "text-xl font-semibold mb-4",
         "text-theme-900 dark:text-theme-100",
-        "border-b border-theme-200 dark:border-theme-800 pb-2"
+        "border-b border-theme-200 dark:border-theme-800 pb-2",
       )}
     >
       {children}
@@ -409,19 +411,19 @@ function CardHeading({ children }: { children: string }) {
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: any }) {
+function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex flex-col space-y-1">
       <span className="text-sm text-theme-500 dark:text-theme-400">{label}</span>
-      <p className="text-theme-700 dark:text-theme-300">{value}</p>
+      <p className="text-theme-700 dark:text-theme-300 break-all">{value}</p>
     </div>
   );
 }
 
-function PwInput({
-  label,
-  ...rest
-}: React.InputHTMLAttributes<HTMLInputElement> & { label: string }) {
+function PwInput(
+  props: React.InputHTMLAttributes<HTMLInputElement> & { label: string },
+) {
+  const { label, ...rest } = props;
   return (
     <div>
       <label className="block mb-2 text-sm font-medium text-theme-700 dark:text-theme-300">
@@ -435,7 +437,7 @@ function PwInput({
           "bg-theme-100/50 dark:bg-theme-800/50",
           "border border-theme-200 dark:border-theme-700",
           "focus:ring-2 focus:ring-theme-500/50 focus:outline-none",
-          "text-theme-900 dark:text-theme-100"
+          "text-theme-900 dark:text-theme-100",
         )}
       />
     </div>
@@ -448,7 +450,7 @@ function EmptyState({ children }: { children: string }) {
       className={cn(
         "text-center py-8",
         "bg-theme-100/25 dark:bg-theme-900/25",
-        "border border-theme-200/50 dark:border-theme-800/50 rounded-lg"
+        "border border-theme-200/50 dark:border-theme-800/50 rounded-lg",
       )}
     >
       <p className="text-theme-600 dark:text-theme-400">{children}</p>
