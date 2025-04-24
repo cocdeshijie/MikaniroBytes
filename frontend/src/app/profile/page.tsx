@@ -4,10 +4,11 @@
 /*                               IMPORTS                              */
 /* ------------------------------------------------------------------ */
 import { FormEvent, useEffect, useMemo } from "react";
-import { atom, useAtom } from "jotai";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { atom, useAtom } from "jotai";
 import { cn } from "@/utils/cn";
+import { api } from "@/lib/api";
 import {
   userInfoAtom,
   sessionsAtom,
@@ -15,7 +16,7 @@ import {
   errorAtom,
   SessionItem,
 } from "@/atoms/auth";
-import { useToast } from "@/providers/toast-provider";
+import { useToast } from "@/lib/toast";
 
 /* ------------------------------------------------------------------ */
 /*                       LOCAL (page-scoped) ATOMS                    */
@@ -49,32 +50,15 @@ export default function UserPage() {
   /* ---------------- fetch user info + sessions ----------------- */
   useEffect(() => {
     if (status !== "authenticated" || !session?.accessToken || hasFetched) return;
-
     (async () => {
-      setLoading(true);
-      setError("");
+      setLoading(true); setError("");
       try {
-        /* 1. /me -------------------------------------------------- */
-        const meRes = await fetch(
-          `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/me`,
-          { headers: { Authorization: `Bearer ${session.accessToken}` } }
-        );
-        if (!meRes.ok) throw new Error("Failed to fetch user info");
-        setUserInfo(await meRes.json());
-
-        /* 2. sessions -------------------------------------------- */
-        const sRes = await fetch(
-          `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/sessions`,
-          { headers: { Authorization: `Bearer ${session.accessToken}` } }
-        );
-        if (!sRes.ok) throw new Error("Failed to fetch sessions");
-        setSessions(await sRes.json() as SessionItem[]);
-        setFetched(true);                                  // ▶︎ done!
+        setUserInfo(await api("/auth/me", { token: session.accessToken }));
+        setSessions(await api("/auth/sessions", { token: session.accessToken }));
+        setFetched(true);
       } catch (e: any) {
-        setError(e.message ?? "Error loading user data");
-      } finally {
-        setLoading(false);
-      }
+        setError(e.message);
+      } finally { setLoading(false); }
     })();
   }, [status, session?.accessToken, hasFetched]);
 
@@ -82,60 +66,39 @@ export default function UserPage() {
    *                               HELPERS
    * ------------------------------------------------------------------ */
   const revokeSession = async (sessionId: number) => {
-    setLoading(true); setError("");
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/sessions/${sessionId}`,
-        { method: "DELETE", headers: { Authorization: `Bearer ${session?.accessToken}` } }
-      );
-      if (!res.ok) throw new Error("Failed to revoke session");
+      await api(`/auth/sessions/${sessionId}`, { method: "DELETE", token: session?.accessToken });
       setSessions((p) => p.filter((s) => s.session_id !== sessionId));
       push({ title: "Session revoked", variant: "success" });
     } catch (e: any) {
-      setError(e.message ?? "Error revoking session");
-      push({ title: "Revoke failed", variant: "error" });
-    } finally { setLoading(false); }
+      push({ title: "Revoke failed", description: e.message, variant: "error" });
+    }
   };
 
   const revokeAll = async () => {
     if (!confirm("Logout from all devices?")) return;
-    setLoading(true); setError("");
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/logout-all`,
-        { method: "POST", headers: { Authorization: `Bearer ${session?.accessToken}` } }
-      );
-      if (!res.ok) throw new Error("Failed to logout everywhere");
+      await api("/auth/logout-all", { method: "POST", token: session?.accessToken });
       setSessions([]);
       push({ title: "Logged out everywhere", variant: "success" });
     } catch (e: any) {
-      setError(e.message ?? "Error logging out everywhere");
-      push({ title: "Logout-all failed", variant: "error" });
-    } finally { setLoading(false); }
+      push({ title: "Logout-all failed", description: e.message, variant: "error" });
+    }
   };
 
   const changePw = async (e: FormEvent) => {
     e.preventDefault();
-    setLoading(true); setError("");
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/change-password`,
-        {
-          method : "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization : `Bearer ${session?.accessToken}`,
-          },
-          body: JSON.stringify({ old_password: oldPw, new_password: newPw }),
-        }
-      );
-      if (!res.ok) throw new Error("Failed to change password");
+      await api("/auth/change-password", {
+        method: "POST",
+        token : session?.accessToken,
+        json  : { old_password: oldPw, new_password: newPw },
+      });
       push({ title: "Password updated", variant: "success" });
       setOldPw(""); setNewPw("");
     } catch (e: any) {
-      setError(e.message ?? "Error changing password");
-      push({ title: "Password change failed", variant: "error" });
-    } finally { setLoading(false); }
+      push({ title: "Password change failed", description: e.message, variant: "error" });
+    }
   };
 
   /* ---------------- skeleton during first load ---------------- */
