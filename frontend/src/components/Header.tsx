@@ -13,10 +13,16 @@ import { cn } from "@/utils/cn";
 /* ────────────────────────────────────────────────────────────────── */
 /*  Atoms                                                             */
 /* ────────────────────────────────────────────────────────────────── */
-const logoHoverAtom   = atom(false);
-const scrollAtom      = atom(false);
-const dialogOpenAtom  = atom(false);
-const regEnabledAtom  = atom<null | boolean>(null);   // ← null = loading
+const logoHoverAtom = atom(false);
+const scrollAtom = atom(false);
+const dialogOpenAtom = atom(false);
+const regEnabledAtom = atom<null | boolean>(null); // ← null = loading
+
+/* ------------------------------------------------------------------ */
+/*  helper – decide if a link is active                               */
+/* ------------------------------------------------------------------ */
+const isActive = (pathname: string, href: string) =>
+  href === "/" ? pathname === "/" : pathname.startsWith(href);
 
 /* ────────────────────────────────────────────────────────────────── */
 /*  Logo Component                                                    */
@@ -91,7 +97,7 @@ const MobileNavDialog = () => {
   /* show common routes */
   const navItems = [{ title: "Home", href: "/" }];
 
-  /* auth‑only routes */
+  /* auth-only routes */
   if (session?.accessToken) {
     navItems.push({ title: "Dashboard", href: "/dashboard" });
     navItems.push({ title: "Profile", href: "/profile" });
@@ -123,7 +129,7 @@ const MobileNavDialog = () => {
                 className={cn(
                   "flex justify-between items-center w-full p-3 rounded-lg",
                   "text-theme-900 dark:text-theme-100",
-                  pathname === item.href
+                  isActive(pathname, item.href)
                     ? "bg-theme-200 dark:bg-theme-700"
                     : "hover:bg-theme-200/50 dark:hover:bg-theme-800/50"
                 )}
@@ -266,7 +272,7 @@ const Header = () => {
                   href={item.href}
                   className={cn(
                     "block px-6 py-2 rounded-lg font-medium transition-colors",
-                    pathname === item.href
+                    isActive(pathname, item.href)
                       ? "bg-theme-200 dark:bg-theme-700 text-theme-800 dark:text-white"
                       : "text-theme-600 dark:text-theme-300 hover:bg-theme-200/70 dark:hover:bg-theme-800/70"
                   )}
@@ -279,7 +285,7 @@ const Header = () => {
         </nav>
       </div>
 
-      {/* Right‑hand buttons */}
+      {/* Right-hand buttons */}
       <div className="flex items-center gap-3">
         <button
           onClick={toggleTheme}
@@ -292,7 +298,7 @@ const Header = () => {
         </button>
 
         {session?.accessToken ? (
-          /* logged‑in desktop buttons */
+          /* logged-in desktop buttons */
           <div className="hidden md:block">
             <button
               onClick={handleLogout}
