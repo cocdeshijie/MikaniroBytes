@@ -88,6 +88,25 @@ def _safe_member_path(base: Path, member: str) -> Path:
     return dest
 
 
+def _cleanup_empty_dirs(start: str) -> None:
+    """
+    Given *start* as an **absolute** file path that has just been deleted,
+    remove any empty parent directories until we reach UPLOAD_DIR.
+    """
+    root = os.path.abspath(UPLOAD_DIR)
+    parent = os.path.dirname(start)
+
+    while os.path.abspath(parent).startswith(root) and os.path.abspath(parent) != root:
+        try:
+            if not os.listdir(parent):
+                os.rmdir(parent)
+                parent = os.path.dirname(parent)          # climb one level up
+            else:
+                break                                      # parent not empty → stop
+        except OSError:
+            break
+
+
 # -----------------------------------------------------------------------------
 # Pydantic DTOs
 # -----------------------------------------------------------------------------
@@ -275,7 +294,7 @@ def batch_delete_files(
     if not rows:
         raise HTTPException(status_code=404, detail="No matching files found")
 
-    deleted_ids: List[int] = []
+    deleted_ids: list[int] = []
 
     for f in rows:
         rel_path: str = f.storage_data.get("path", "")
@@ -284,6 +303,7 @@ def batch_delete_files(
         if os.path.isfile(abs_path):
             try:
                 os.remove(abs_path)
+                _cleanup_empty_dirs(abs_path)
             except OSError:
                 # If the file is already gone we still want to remove the DB row
                 pass

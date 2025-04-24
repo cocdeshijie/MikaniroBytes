@@ -46,9 +46,25 @@ def get_guest_user(db: Session) -> User:
 
 def delete_physical_files(file_rows: List[File]) -> int:
     """
-    Delete the files on disk referenced by *file_rows*.
-    Returns number of files attempted.
+    Delete the files on disk referenced by *file_rows*,
+    and remove now-empty directories up to the uploads/ root.
+    Returns the number of file paths attempted.
     """
+    from app.routers.files import disk_path, UPLOAD_DIR  # local import to avoid cycle
+
+    def _cleanup_empty_dirs(path: str) -> None:
+        root = os.path.abspath(UPLOAD_DIR)
+        parent = os.path.dirname(path)
+        while os.path.abspath(parent).startswith(root) and os.path.abspath(parent) != root:
+            try:
+                if not os.listdir(parent):
+                    os.rmdir(parent)
+                    parent = os.path.dirname(parent)
+                else:
+                    break
+            except OSError:
+                break
+
     count = 0
     for f in file_rows:
         rel = f.storage_data.get("path", "")
@@ -56,6 +72,7 @@ def delete_physical_files(file_rows: List[File]) -> int:
         if abs_path and os.path.isfile(abs_path):
             try:
                 os.remove(abs_path)
+                _cleanup_empty_dirs(abs_path)
             except OSError:
                 pass
         count += 1
