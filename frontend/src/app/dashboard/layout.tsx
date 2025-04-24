@@ -5,13 +5,13 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { atom, useAtom } from "jotai";
 import { cn } from "@/utils/cn";
-
 import Link from "next/link";
+import { api } from "@/lib/api";           // ⬅️ api() wrapper
 
 // (Optional) We can store a pageError in Jotai if you want:
 const pageErrorAtom = atom<string>("");
 // (Optional) store if user is admin:
-const isAdminAtom = atom<boolean>(false);
+const isAdminAtom   = atom<boolean>(false);
 
 export default function DashboardLayout({
   children,
@@ -19,39 +19,30 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const { data: session, status } = useSession();
-  const router = useRouter();
+  const router                    = useRouter();
 
   // optional: global error or isAdmin states
   const [pageError, setPageError] = useAtom(pageErrorAtom);
-  const [isAdmin, setIsAdmin] = useAtom(isAdminAtom);
+  const [isAdmin,   setIsAdmin]   = useAtom(isAdminAtom);
 
-  // If not logged in => redirect
+  /* redirect guests */
   useEffect(() => {
     if (status === "unauthenticated") {
       router.replace("/auth/login");
     }
   }, [status, router]);
 
-  // On mount, check if SUPER_ADMIN
+  /* On mount, ask backend for group name via api() */
   useEffect(() => {
     if (status !== "authenticated" || !session?.accessToken) return;
 
     (async () => {
       try {
         setPageError("");
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/me`,
-          {
-            headers: {
-              Authorization: `Bearer ${session.accessToken}`,
-            },
-          }
-        );
-        if (!res.ok) {
-          throw new Error("Failed to load user info");
-        }
-        const data = await res.json();
-        setIsAdmin(data.group?.name === "SUPER_ADMIN");
+        const me = await api<{ group?: { name: string } }>("/auth/me", {
+          token: session.accessToken,
+        });
+        setIsAdmin(me.group?.name === "SUPER_ADMIN");
       } catch (err: any) {
         setPageError(err.message || "Error checking admin status");
       }
@@ -153,13 +144,13 @@ export default function DashboardLayout({
                 {/* Desktop nav buttons */}
                 <div className="space-y-2">
                   <NavButton href="/dashboard/files" label="My Files" />
-                  {isAdmin && <NavButton href="/dashboard/groups" label="Groups" />}
+                  {isAdmin && <NavButton href="/dashboard/groups"  label="Groups"  />}
                   {isAdmin && <NavButton href="/dashboard/configs" label="Configs" />}
                 </div>
               </div>
             </div>
 
-            {/* RIGHT COLUMN: "children" = nested route content */}
+            {/* RIGHT COLUMN: nested route content */}
             <div className="md:col-span-8">
               <div
                 className={cn(

@@ -9,12 +9,13 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { atom, useAtom } from "jotai";
 import { usePathname } from "next/navigation";
 import { cn } from "@/utils/cn";
+import { api } from "@/lib/api";
 
 /* ────────────────────────────────────────────────────────────────── */
 /*  Atoms                                                             */
 /* ────────────────────────────────────────────────────────────────── */
-const logoHoverAtom = atom(false);
-const scrollAtom = atom(false);
+const logoHoverAtom  = atom(false);
+const scrollAtom     = atom(false);
 const dialogOpenAtom = atom(false);
 const regEnabledAtom = atom<null | boolean>(null); // ← null = loading
 
@@ -81,16 +82,22 @@ const Logo = () => {
 /* ────────────────────────────────────────────────────────────────── */
 const MobileNavDialog = () => {
   const [isOpen, setIsOpen] = useAtom(dialogOpenAtom);
-  const { data: session } = useSession();
-  const pathname = usePathname();
-  const [regEnabled] = useAtom(regEnabledAtom);
+  const { data: session }   = useSession();
+  const pathname            = usePathname();
+  const [regEnabled]        = useAtom(regEnabledAtom);
 
   const handleLogout = async () => {
-    await fetch("http://localhost:8000/auth/logout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token: session?.accessToken }),
-    });
+    if (session?.accessToken) {
+      /* uses api() – adds Authorization header for us */
+      try {
+        await api("/auth/logout", {
+          method: "POST",
+          token : session.accessToken,
+        });
+      } catch {
+        /* ignore – sign-out proceeds anyway */
+      }
+    }
     await signOut();
   };
 
@@ -100,7 +107,7 @@ const MobileNavDialog = () => {
   /* auth-only routes */
   if (session?.accessToken) {
     navItems.push({ title: "Dashboard", href: "/dashboard" });
-    navItems.push({ title: "Profile", href: "/profile" });
+    navItems.push({ title: "Profile",   href: "/profile"   });
   }
 
   return (
@@ -194,9 +201,9 @@ const MobileNavDialog = () => {
 const Header = () => {
   const [isScrolled, setIsScrolled] = useAtom(scrollAtom);
   const [regEnabled, setRegEnabled] = useAtom(regEnabledAtom);
-  const { data: session } = useSession();
-  const { theme, setTheme } = useTheme();
-  const pathname = usePathname();
+  const { data: session }           = useSession();
+  const { theme, setTheme }         = useTheme();
+  const pathname                    = usePathname();
 
   /* track scroll shadow */
   useEffect(() => {
@@ -208,32 +215,29 @@ const Header = () => {
     return () => window.removeEventListener("scroll", handleScroll);
   }, [setIsScrolled]);
 
-  /* fetch public registration switch once */
+  /* fetch public-registration switch once – via api() */
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/registration-enabled`,
-          { cache: "no-store" }
-        );
-        const data = await res.json();
-        setRegEnabled(Boolean(data?.enabled));
+        const data = await api<{ enabled: boolean }>("/auth/registration-enabled");
+        setRegEnabled(Boolean(data.enabled));
       } catch {
         setRegEnabled(true); // network failure → assume enabled
       }
     })();
   }, [setRegEnabled]);
 
-  const toggleTheme = () => {
-    setTheme(theme === "dark" ? "light" : "dark");
-  };
+  const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
 
   const handleLogout = async () => {
-    await fetch("http://localhost:8000/auth/logout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token: session?.accessToken }),
-    });
+    if (session?.accessToken) {
+      try {
+        await api("/auth/logout", {
+          method: "POST",
+          token : session.accessToken,
+        });
+      } catch {/* ignore */}
+    }
     await signOut();
   };
 
@@ -241,7 +245,7 @@ const Header = () => {
   const navItems = [{ title: "Home", href: "/" }];
   if (session?.accessToken) {
     navItems.push({ title: "Dashboard", href: "/dashboard" });
-    navItems.push({ title: "Profile", href: "/profile" });
+    navItems.push({ title: "Profile",   href: "/profile" });
   }
 
   return (
