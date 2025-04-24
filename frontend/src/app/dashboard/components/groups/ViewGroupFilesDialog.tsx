@@ -8,13 +8,15 @@ import FileViewer from "../files/FileViewer";
 import { atom, useAtom } from "jotai";
 
 export default function ViewGroupFilesDialog({
-  groupId,
-  groupName,
-  sessionToken,
-}: {
-  groupId: number;
-  groupName: string;
-  sessionToken: string;
+                                                 groupId,
+                                                 groupName,
+                                                 sessionToken,
+                                                 className
+                                             }: {
+    groupId: number,
+    groupName: string,
+    sessionToken: string,
+    className?: string
 }) {
   const [open, setOpen] = useAtom(useMemo(() => atom(false), []));
 
