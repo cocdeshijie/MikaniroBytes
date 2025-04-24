@@ -1,73 +1,50 @@
 "use client";
 
-/* ------------------------------------------------------------------ */
-/*                               IMPORTS                              */
-/* ------------------------------------------------------------------ */
 import { FormEvent, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { useAtom, atom } from "jotai";
-import * as Form from "@radix-ui/react-form";               // ← NEW
+import * as Form from "@radix-ui/react-form";
 import { cn } from "@/utils/cn";
+import { api } from "@/lib/api";
+import { useToast } from "@/lib/toast";
 
-/* ------------------------------------------------------------------ */
-/*                               ATOMS                                */
-/* ------------------------------------------------------------------ */
-const usernameA  = atom("");
-const emailA     = atom("");
-const passwordA  = atom("");
-const errorA     = atom("");
-const enabledA   = atom<null | boolean>(null);  // null = loading
+const usernameA = atom("");
+const emailA    = atom("");
+const passwordA = atom("");
+const errorA    = atom("");
+const enabledA  = atom<null | boolean>(null);
 
-/* ------------------------------------------------------------------ */
-/*                               PAGE                                 */
-/* ------------------------------------------------------------------ */
 export default function RegisterPage() {
-  const router                       = useRouter();
+  const router = useRouter();
+  const { push } = useToast();
 
-  const [username, setUsername]      = useAtom(usernameA);
-  const [email, setEmail]            = useAtom(emailA);
-  const [password, setPassword]      = useAtom(passwordA);
-  const [errorMsg, setError]         = useAtom(errorA);
-  const [enabled, setEnabled]        = useAtom(enabledA);
+  const [username, setUsername] = useAtom(usernameA);
+  const [email, setEmail]       = useAtom(emailA);
+  const [password, setPassword] = useAtom(passwordA);
+  const [errorMsg, setError]    = useAtom(errorA);
+  const [enabled, setEnabled]   = useAtom(enabledA);
 
-  /* ---------------- fetch public flag once ------------------------ */
   useEffect(() => {
     (async () => {
       try {
-        const res  = await fetch(
-          `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/registration-enabled`,
-          { cache: "no-store" }
-        );
-        const data = await res.json();
-        setEnabled(Boolean(data?.enabled));
+        const data = await api<{ enabled: boolean }>("/auth/registration-enabled");
+        setEnabled(data.enabled);
       } catch {
-        setEnabled(true);          // network error → assume open
+        setEnabled(true);
       }
     })();
   }, []);
 
-  /* ---------------- submit handler ------------------------------- */
   async function handleRegister(e: FormEvent) {
     e.preventDefault();
     setError("");
-
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/register`,
-        {
-          method : "POST",
-          headers: { "Content-Type": "application/json" },
-          body   : JSON.stringify({ username, email, password }),
-        }
-      );
+      await api("/auth/register", {
+        method: "POST",
+        json: { username, email, password },
+      });
 
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        throw new Error(d.detail || "Registration failed");
-      }
-
-      /* auto‑login */
       const login = await signIn("credentials", {
         username,
         password,
@@ -78,6 +55,7 @@ export default function RegisterPage() {
       router.push("/profile");
     } catch (err: any) {
       setError(err.message || "Registration error");
+      push({ title: "Registration failed", description: err.message, variant: "error" });
     }
   }
 
