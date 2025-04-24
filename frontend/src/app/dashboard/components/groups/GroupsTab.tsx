@@ -1,14 +1,10 @@
 "use client";
 
-/* ────────────────────────────────────────────────────────────────── */
-/*                              IMPORTS                              */
-/* ────────────────────────────────────────────────────────────────── */
 import { atom, useAtom } from "jotai";
 import { useMemo, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { FiLoader } from "react-icons/fi";
-
 import { cn } from "@/utils/cn";
 import { ByteValueTooltip } from "./ByteValueTooltip";
 import AddGroupDialog from "./AddGroupDialog";
@@ -17,13 +13,10 @@ import ConfirmDeleteGroupDialog from "./ConfirmDeleteGroupDialog";
 import ViewUsersDialog from "./ViewUsersDialog";
 import ViewGroupFilesDialog from "./ViewGroupFilesDialog";
 import type { GroupItem } from "@/types/sharedTypes";
+import { api, ApiError } from "@/lib/api";
 
-/* ────────────────────────────────────────────────────────────────── */
-/*                “per-instance” Jotai atoms via useMemo             */
-/* ────────────────────────────────────────────────────────────────── */
+/* ---- per-instance Jotai atoms ------------------------------------ */
 function useLocalAtoms() {
-  /* each call creates a *fresh* atom, so different <GroupsTab> mounts
-     never share state                                                    */
   return {
     groupsAtom:  useMemo(() => atom<GroupItem[]>([]), []),
     fetchedAtom: useMemo(() => atom(false), []),
@@ -32,26 +25,22 @@ function useLocalAtoms() {
   };
 }
 
-/* immutable groups that can’t be removed */
 const IMMUTABLE: readonly string[] = ["SUPER_ADMIN", "GUEST"];
 
-/* =================================================================== */
-/*                           COMPONENT                                 */
 /* =================================================================== */
 export default function GroupsTab() {
   const { data: session } = useSession();
   const { groupsAtom, fetchedAtom, loadingAtom, errorAtom } = useLocalAtoms();
 
-  /* Jotai state */
   const [groups,  setGroups]  = useAtom(groupsAtom);
   const [fetched, setFetched] = useAtom(fetchedAtom);
   const [loading, setLoading] = useAtom(loadingAtom);
   const [error,   setError]   = useAtom(errorAtom);
 
-  /* ─── initial fetch ─────────────────────────────────────────────── */
+  /* ---------- initial fetch ---------- */
   useEffect(() => {
     if (!session?.accessToken || fetched) return;
-    void fetchGroups();      // fire and forget
+    void fetchGroups();
     setFetched(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.accessToken, fetched]);
@@ -60,41 +49,37 @@ export default function GroupsTab() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/groups`,
-        { headers: { Authorization: `Bearer ${session?.accessToken}` } }
-      );
-      if (!res.ok) throw new Error("Failed to fetch groups");
-      const data: GroupItem[] = await res.json();
+      const data = await api<GroupItem[]>("/admin/groups", {
+        token: session?.accessToken,
+      });
       setGroups(data);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "Failed to fetch groups";
+      setError(msg);
     } finally {
       setLoading(false);
     }
   }
 
-  /* ─── helpers to update list after dialogs ──────────────────────── */
-  const add = (g: GroupItem)      => setGroups((p) => [...p, g]);
-  const upd = (g: GroupItem)      =>
-    setGroups((p) => p.map((r) => (r.id === g.id ? g : r)));
-  const del = (id: number)        =>
-    setGroups((p) => p.filter((g) => g.id !== id));
+  /* ---------- helpers to update list ---------- */
+  const add = (g: GroupItem) => setGroups((p) => [...p, g]);
+  const upd = (g: GroupItem) => setGroups((p) => p.map((r) => (r.id === g.id ? g : r)));
+  const del = (id: number)   => setGroups((p) => p.filter((g) => g.id !== id));
 
-  /* ─── derived flags ─────────────────────────────────────────────── */
-  const normal          = groups.filter((g) => !IMMUTABLE.includes(g.name));
-  const lockDeleteAny   = normal.length <= 1;
-  const firstLoad       = loading && groups.length === 0;
+  /* ---------- derived flags ---------- */
+  const normal        = groups.filter((g) => !IMMUTABLE.includes(g.name));
+  const lockDeleteAny = normal.length <= 1;
+  const firstLoad     = loading && groups.length === 0;
 
-  /* ───────────────────────────────────────────────────────────────── */
-  /*                               UI                                 */
-  /* ───────────────────────────────────────────────────────────────── */
+  /* ------------------------------------------------------------------ */
+  /*                                UI                                  */
+  /* ------------------------------------------------------------------ */
   return (
     <div>
       <h3
         className={cn(
           "text-lg font-medium mb-2",
-          "border-b border-theme-200 dark:border-theme-800 pb-2"
+          "border-b border-theme-200 dark:border-theme-800 pb-2",
         )}
       >
         Groups Management
@@ -106,7 +91,7 @@ export default function GroupsTab() {
         </p>
       )}
 
-      {/* top bar ---------------------------------------------------- */}
+      {/* top bar */}
       <div className="flex items-center justify-between mb-6 relative">
         <span className="text-sm">
           {loading ? "Loading…" : `${groups.length} groups`}
@@ -114,27 +99,22 @@ export default function GroupsTab() {
         {loading && groups.length > 0 && (
           <FiLoader className="absolute -top-0.5 left-20 w-4 h-4 animate-spin text-theme-600" />
         )}
-        <AddGroupDialog
-          sessionToken={session?.accessToken ?? ""}
-          onCreated={add}
-        />
+        <AddGroupDialog sessionToken={session?.accessToken ?? ""} onCreated={add} />
       </div>
 
-      {/* main panel ------------------------------------------------- */}
+      {/* main panel */}
       <Tooltip.Provider delayDuration={100}>
         <div
           className={cn(
             "p-4 bg-theme-100/25 dark:bg-theme-900/25 rounded-lg",
-            "border border-theme-200/50 dark:border-theme-800/50"
+            "border border-theme-200/50 dark:border-theme-800/50",
           )}
         >
-          {/* first-load skeleton */}
+          {/* skeleton */}
           {firstLoad && <SkeletonList />}
 
-          {/* no data */}
-          {!firstLoad && groups.length === 0 && (
-            <p>No groups found.</p>
-          )}
+          {/* empty */}
+          {!firstLoad && groups.length === 0 && <p>No groups found.</p>}
 
           {/* real list */}
           {!firstLoad && groups.length > 0 && (
@@ -151,7 +131,7 @@ export default function GroupsTab() {
                     className={cn(
                       "p-3 rounded border",
                       "border-theme-200/50 dark:border-theme-800/50",
-                      "bg-theme-50/20 dark:bg-theme-900/20 space-y-2"
+                      "bg-theme-50/20 dark:bg-theme-900/20 space-y-2",
                     )}
                   >
                     {/* header row */}
@@ -159,29 +139,21 @@ export default function GroupsTab() {
                       <p className="font-medium">{g.name}</p>
 
                       {/* controls */}
-                      <div
-                        className={cn(
-                          "grid grid-cols-2 gap-2",
-                          "sm:flex sm:flex-wrap sm:items-center"
-                        )}
-                      >
+                      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
                         <ViewGroupFilesDialog
                           groupId={g.id}
                           groupName={g.name}
                           sessionToken={session?.accessToken ?? ""}
-                          className="w-full sm:w-auto"
                         />
                         <ViewUsersDialog
                           group={g}
                           sessionToken={session?.accessToken ?? ""}
                           onChanged={fetchGroups}
-                          className="w-full sm:w-auto"
                         />
                         <EditGroupDialog
                           group={g}
                           sessionToken={session?.accessToken ?? ""}
                           onUpdated={upd}
-                          className="w-full sm:w-auto"
                         />
 
                         {deleteDisabled ? (
@@ -194,7 +166,7 @@ export default function GroupsTab() {
                                 ? "Cannot delete GUEST"
                                 : "At least one group must remain"
                             }
-                            className="w-full sm:w-auto px-3 py-1.5 rounded text-white bg-gray-400 cursor-not-allowed"
+                            className="px-3 py-1.5 rounded text-white bg-gray-400 cursor-not-allowed"
                           >
                             Delete
                           </button>
@@ -203,7 +175,6 @@ export default function GroupsTab() {
                             group={g}
                             sessionToken={session?.accessToken ?? ""}
                             onDeleted={() => del(g.id)}
-                            className="w-full sm:w-auto"
                           />
                         )}
                       </div>
@@ -241,9 +212,7 @@ export default function GroupsTab() {
   );
 }
 
-/* ────────────────────────────────────────────────────────────────── */
-/*             simple pulse animation while first page loads          */
-/* ────────────────────────────────────────────────────────────────── */
+/* ------------------------------------------------------------------ */
 function SkeletonList() {
   return (
     <ul className="space-y-3">

@@ -16,6 +16,7 @@ import { cn } from "@/utils/cn";
 import { ByteValueTooltip } from "../groups/ByteValueTooltip";
 import { useToast } from "@/providers/toast-provider";
 import ViewUserFilesDialog from "./ViewUserFilesDialog";
+import { api, ApiError } from "@/lib/api";
 
 /* ---------- Types shared with backend ---------- */
 interface GroupItem {
@@ -33,156 +34,130 @@ interface UserItem {
 }
 
 /* ---------- Local atoms ---------- */
-const loadingAtom = atom(false);
-const errorMsgAtom = atom("");
-const usersAtom = atom<UserItem[]>([]);
-const groupsAtom = atom<GroupItem[]>([]);
+const loadingAtom   = atom(false);
+const errorMsgAtom  = atom("");
+const usersAtom     = atom<UserItem[]>([]);
+const groupsAtom    = atom<GroupItem[]>([]);
 const hasFetchedAtom = atom(false);
 
 /* ---------- helpers ---------- */
-const EXCLUDE = ["SUPER_ADMIN", "GUEST"]; // ← filter out special groups
+const EXCLUDE = ["SUPER_ADMIN", "GUEST"]; // filter out special groups
 
 export default function UsersTab() {
   const { data: session } = useSession();
-  const { push } = useToast(); // ★ NEW
+  const { push } = useToast();
 
-  const [loading, setLoading] = useAtom(loadingAtom);
-  const [errorMsg, setErrorMsg] = useAtom(errorMsgAtom);
-  const [users, setUsers] = useAtom(usersAtom);
-  const [groups, setGroups] = useAtom(groupsAtom);
+  const [loading, setLoading]     = useAtom(loadingAtom);
+  const [errorMsg, setErrorMsg]   = useAtom(errorMsgAtom);
+  const [users, setUsers]         = useAtom(usersAtom);
+  const [groups, setGroups]       = useAtom(groupsAtom);
   const [hasFetched, setHasFetched] = useAtom(hasFetchedAtom);
 
   /* ---------- initial fetch ---------- */
   useEffect(() => {
-    if (!session?.accessToken) return;
-    if (!hasFetched) {
-      fetchAll();
-      setHasFetched(true);
-    }
-    // eslint‑disable‑next‑line react-hooks/exhaustive-deps
+    if (!session?.accessToken || hasFetched) return;
+    void fetchAll();
+    setHasFetched(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.accessToken, hasFetched]);
 
+  /* ------------------------------------------------------------------ */
   async function fetchAll() {
     setLoading(true);
     setErrorMsg("");
     try {
-      /* 1) Users */
-      let res = await fetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/users`,
-        {
-          headers: { Authorization: `Bearer ${session?.accessToken}` },
-        }
-      );
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.detail || "Failed to fetch users");
-      }
-      const userData: UserItem[] = await res.json();
+      /* 1) users */
+      const userData = await api<UserItem[]>("/admin/users", {
+        token: session?.accessToken,
+      });
       setUsers(userData);
 
-      /* 2) Groups  (filter out SUPER_ADMIN & GUEST) */
-      res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/groups`, {
-        headers: { Authorization: `Bearer ${session?.accessToken}` },
+      /* 2) groups (filter special) */
+      const groupData = await api<any[]>("/admin/groups", {
+        token: session?.accessToken,
       });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.detail || "Failed to fetch groups");
-      }
-      const groupData: any[] = await res.json();
       setGroups(
         groupData
           .filter((g) => !EXCLUDE.includes(g.name))
-          .map(({ id, name }) => ({ id, name }))
+          .map(({ id, name }) => ({ id, name })),
       );
-    } catch (err: any) {
-      setErrorMsg(err.message || "Error loading data");
+    } catch (err) {
+      const msg =
+        err instanceof ApiError ? err.message : "Error loading data";
+      setErrorMsg(msg);
     } finally {
       setLoading(false);
     }
   }
 
-  /* ---------- handlers ---------- */
+  /* ------------------------------------------------------------------ */
   async function handleGroupChange(userId: number, newGroupId: number) {
     setLoading(true);
     setErrorMsg("");
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/users/${userId}/group`,
+      const updated = await api<UserItem>(
+        `/admin/users/${userId}/group`,
         {
           method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session?.accessToken}`,
-          },
-          body: JSON.stringify({ group_id: newGroupId }),
-        }
+          token: session?.accessToken,
+          json : { group_id: newGroupId },
+        },
       );
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.detail || "Failed to update group");
-      }
-      const updated: UserItem = await res.json();
       setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
-      push({
-        title: "Group updated",
-        description: updated.username,
-        variant: "success",
-      }); // ★
-    } catch (err: any) {
-      setErrorMsg(err.message || "Error updating group");
-      push({ title: "Update failed", variant: "error" }); // ★
+      push({ title: "Group updated", description: updated.username, variant: "success" });
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Error updating group";
+      setErrorMsg(msg);
+      push({ title: "Update failed", variant: "error" });
     } finally {
       setLoading(false);
     }
   }
 
+  /* ------------------------------------------------------------------ */
   async function handleDeleteUser(
     userId: number,
     deleteFiles: boolean,
-    close: () => void
+    close: () => void,
   ) {
     setLoading(true);
     setErrorMsg("");
     try {
-      const url = `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/users/${userId}?delete_files=${deleteFiles}`;
-      const res = await fetch(url, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${session?.accessToken}` },
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.detail || "Failed to delete user");
-      }
+      await api<void>(
+        `/admin/users/${userId}?delete_files=${deleteFiles}`,
+        { method: "DELETE", token: session?.accessToken },
+      );
       setUsers((prev) => prev.filter((u) => u.id !== userId));
-      push({ title: "User deleted", variant: "success" }); // ★
+      push({ title: "User deleted", variant: "success" });
       close();
-    } catch (err: any) {
-      setErrorMsg(err.message || "Error deleting user");
-      push({ title: "Delete failed", variant: "error" }); // ★
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Error deleting user";
+      setErrorMsg(msg);
+      push({ title: "Delete failed", variant: "error" });
     } finally {
       setLoading(false);
     }
   }
 
   /* ---------- helpers ---------- */
-  function isSuperAdmin(user: UserItem) {
-    return user.group?.name === "SUPER_ADMIN";
-  }
+  const isSuperAdmin = (u: UserItem) => u.group?.name === "SUPER_ADMIN";
 
-  /* ---------- render ---------- */
+  /* ------------------------------------------------------------------ */
+  /*                                UI                                  */
+  /* ------------------------------------------------------------------ */
   return (
     <Tooltip.Provider delayDuration={100} skipDelayDuration={0}>
       <div
         className={cn(
           "p-4 bg-theme-100/25 dark:bg-theme-900/25",
-          "rounded-lg border border-theme-200/50 dark:border-theme-800/50"
+          "rounded-lg border border-theme-200/50 dark:border-theme-800/50",
         )}
       >
         <h3 className="text-lg font-medium text-theme-700 dark:text-theme-300 mb-2">
           Users Management
         </h3>
         <p className="text-sm text-theme-500 dark:text-theme-400 mb-4">
-          View all accounts, change groups (except SUPER_ADMIN & GUEST), or
+          View all accounts, change groups (except SUPER_ADMIN &amp; GUEST), or
           remove users.
         </p>
 
@@ -190,7 +165,7 @@ export default function UsersTab() {
           <div
             className={cn(
               "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400",
-              "p-3 rounded mb-4 border border-red-200/50 dark:border-red-800/50"
+              "p-3 rounded mb-4 border border-red-200/50 dark:border-red-800/50",
             )}
           >
             {errorMsg}
@@ -209,7 +184,7 @@ export default function UsersTab() {
                 className={cn(
                   "p-4 rounded-lg border",
                   "border-theme-200/50 dark:border-theme-800/50",
-                  "bg-theme-50/20 dark:bg-theme-900/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+                  "bg-theme-50/20 dark:bg-theme-900/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4",
                 )}
               >
                 {/* LEFT block */}
@@ -238,9 +213,10 @@ export default function UsersTab() {
                     <ViewUserFilesDialog
                       userId={u.id}
                       username={u.username}
-                      sessionToken={session?.accessToken || ""}
+                      sessionToken={session?.accessToken ?? ""}
                     />
                   )}
+
                   {/* Group select */}
                   {isSuperAdmin(u) ? (
                     <span className="text-theme-700 dark:text-theme-300 text-sm">
@@ -249,7 +225,7 @@ export default function UsersTab() {
                   ) : (
                     <Select.Root
                       value={(u.group?.id ?? "").toString()}
-                      onValueChange={(val: string) =>
+                      onValueChange={(val) =>
                         handleGroupChange(u.id, parseInt(val, 10))
                       }
                     >
@@ -259,7 +235,7 @@ export default function UsersTab() {
                           "border-theme-200 dark:border-theme-700",
                           "bg-theme-50 dark:bg-theme-800",
                           "text-theme-900 dark:text-theme-100 text-sm",
-                          "focus:outline-none"
+                          "focus:outline-none",
                         )}
                       >
                         <Select.Value />
@@ -274,7 +250,7 @@ export default function UsersTab() {
                           className={cn(
                             "overflow-hidden rounded-lg shadow-lg z-50",
                             "bg-theme-50 dark:bg-theme-900",
-                            "border border-theme-200 dark:border-theme-700"
+                            "border border-theme-200 dark:border-theme-700",
                           )}
                         >
                           <Select.ScrollUpButton className="flex items-center justify-center py-1">
@@ -290,7 +266,7 @@ export default function UsersTab() {
                                   "flex items-center px-3 py-2 text-sm select-none cursor-pointer",
                                   "text-theme-700 dark:text-theme-300",
                                   "radix-state-checked:bg-theme-200 dark:radix-state-checked:bg-theme-700",
-                                  "hover:bg-theme-100 dark:hover:bg-theme-800"
+                                  "hover:bg-theme-100 dark:hover:bg-theme-800",
                                 )}
                               >
                                 <Select.ItemText>{g.name}</Select.ItemText>
@@ -313,8 +289,8 @@ export default function UsersTab() {
                   {!isSuperAdmin(u) && (
                     <DeleteUserButton
                       user={u}
-                      onDelete={(deleteFiles, close) =>
-                        handleDeleteUser(u.id, deleteFiles, close)
+                      onDelete={(delFiles, close) =>
+                        handleDeleteUser(u.id, delFiles, close)
                       }
                     />
                   )}
@@ -337,15 +313,14 @@ function DeleteUserButton({
   onDelete: (deleteFiles: boolean, close: () => void) => void;
 }) {
   const [deleteFiles, setDeleteFiles] = useAtom(useMemo(() => atom(false), []));
-  const [open, setOpen] = useAtom(useMemo(() => atom(false), []));
+  const [open, setOpen]               = useAtom(useMemo(() => atom(false), []));
 
   return (
     <AlertDialog.Root open={open} onOpenChange={setOpen}>
       <AlertDialog.Trigger asChild>
         <button
           className={cn(
-            "p-2 rounded bg-red-600 text-white hover:bg-red-700",
-            "transition"
+            "p-2 rounded bg-red-600 text-white hover:bg-red-700 transition",
           )}
         >
           <BiTrash className="h-4 w-4" />
@@ -357,7 +332,7 @@ function DeleteUserButton({
         <AlertDialog.Content
           className={cn(
             "fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2",
-            "bg-theme-50 dark:bg-theme-900 rounded-lg shadow-lg max-w-sm w-full p-6"
+            "bg-theme-50 dark:bg-theme-900 rounded-lg shadow-lg max-w-sm w-full p-6",
           )}
         >
           <AlertDialog.Title className="text-lg font-medium text-red-600 dark:text-red-400 mb-2">
@@ -387,9 +362,7 @@ function DeleteUserButton({
             <AlertDialog.Cancel asChild>
               <button
                 className={cn(
-                  "px-4 py-2 rounded border",
-                  "border-theme-300 dark:border-theme-700 text-theme-700 dark:text-theme-200",
-                  "bg-theme-200/50 dark:bg-theme-800/50 hover:bg-theme-200 dark:hover:bg-theme-800",
+                  "px-4 py-2 rounded border border-theme-300 dark:border-theme-700",
                 )}
               >
                 Cancel

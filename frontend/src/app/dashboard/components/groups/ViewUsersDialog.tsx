@@ -10,8 +10,9 @@ import { useToast } from "@/providers/toast-provider";
 import ViewUserFilesDialog from "../users/ViewUserFilesDialog";
 import ConfirmDeleteUserDialog from "../users/ConfirmDeleteUserDialog";
 import MoveUserSelect from "../users/MoveUserSelect";
+import { api, ApiError } from "@/lib/api";
 
-/* ─── local types ────────────────────────────────────────────────── */
+/* ---------- local types ---------- */
 interface GroupInfo {
   id: number;
   name: string;
@@ -27,28 +28,23 @@ interface UserItem {
   storage_bytes: number;
 }
 
-/* ================================================================== */
+/* =================================================================== */
 export default function ViewUsersDialog({
-                                          group,
-                                          sessionToken,
-                                          onChanged,
-                                          className
-                                        }: {
-  group: GroupInfo,
-  sessionToken: string,
-  onChanged: () => void,
-  className?: string
+  group,
+  sessionToken,
+  onChanged,
+}: {
+  group: GroupInfo;
+  sessionToken: string;
+  onChanged: () => void;
 }) {
   const { push } = useToast();
 
-  /* ─── Jotai atoms – create new ones *per component instance* ─── */
   const openA    = useMemo(() => atom(false), [group.id]);
   const loadingA = useMemo(() => atom(false), [group.id]);
   const errorA   = useMemo(() => atom(""), [group.id]);
   const usersA   = useMemo(() => atom<UserItem[]>([]), [group.id]);
-  const groupsA  = useMemo(() => atom<{ id: number; name: string }[]>([]), [
-    group.id,
-  ]);
+  const groupsA  = useMemo(() => atom<{ id:number; name:string }[]>([]), [group.id]);
 
   const [open, setOpen]       = useAtom(openA);
   const [loading, setLoading] = useAtom(loadingA);
@@ -56,10 +52,10 @@ export default function ViewUsersDialog({
   const [users, setUsers]     = useAtom(usersA);
   const [groups, setGroups]   = useAtom(groupsA);
 
-  /* ─── fetch fresh data every time dialog opens ───────────────── */
+  /* ---------- fetch each time dialog opens ---------- */
   useEffect(() => {
     if (!open) return;
-    fetchAll();
+    void fetchAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -67,34 +63,27 @@ export default function ViewUsersDialog({
     setLoading(true);
     setError("");
     try {
-      /* users of just this group */
-      const uRes = await fetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/users?group_id=${group.id}`,
-        { headers: { Authorization: `Bearer ${sessionToken}` } },
+      const u = await api<UserItem[]>(
+        `/admin/users?group_id=${group.id}`,
+        { token: sessionToken },
       );
-      if (!uRes.ok) throw new Error("Failed to fetch users");
-      setUsers(await uRes.json());
+      setUsers(u);
 
-      /* list of other groups for “Move‑to” dropdown */
-      const gRes = await fetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/groups`,
-        { headers: { Authorization: `Bearer ${sessionToken}` } },
-      );
-      if (!gRes.ok) throw new Error("Failed to fetch groups");
-      const list: any[] = await gRes.json();
+      const gRaw = await api<any[]>("/admin/groups", { token: sessionToken });
       setGroups(
-        list
+        gRaw
           .filter((g) => !["SUPER_ADMIN", "GUEST"].includes(g.name))
           .map(({ id, name }) => ({ id, name })),
       );
-    } catch (e: any) {
-      setError(e.message || "Load error");
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "Load error";
+      setError(msg);
     } finally {
       setLoading(false);
     }
   }
 
-  /* ─── helpers ─────────────────────────────────────────────────── */
+  /* ---------- helpers ---------- */
   const isImmutable = (u: UserItem) =>
     u.group?.name === "SUPER_ADMIN" || u.group?.name === "GUEST";
 
@@ -103,27 +92,16 @@ export default function ViewUsersDialog({
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/users/${userId}/group`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${sessionToken}`,
-          },
-          body: JSON.stringify({ group_id: newGroupId }),
-        },
+      await api(
+        `/admin/users/${userId}/group`,
+        { method: "PUT", token: sessionToken, json: { group_id: newGroupId } },
       );
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        throw new Error(d.detail || "Update failed");
-      }
-      // remove from local list (user now belongs elsewhere)
       setUsers((p) => p.filter((u) => u.id !== userId));
       push({ title: "User moved", variant: "success" });
       onChanged();
-    } catch (e: any) {
-      setError(e.message || "Move error");
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "Move failed";
+      setError(msg);
       push({ title: "Move failed", variant: "error" });
     } finally {
       setLoading(false);
@@ -135,7 +113,9 @@ export default function ViewUsersDialog({
     onChanged();
   }
 
-  /* ─── UI ──────────────────────────────────────────────────────── */
+  /* ------------------------------------------------------------------ */
+  /*                                UI                                  */
+  /* ------------------------------------------------------------------ */
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Trigger asChild>
@@ -184,13 +164,11 @@ export default function ViewUsersDialog({
                       "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4",
                     )}
                   >
-                    {/* left side */}
+                    {/* LEFT */}
                     <div className="space-y-1 flex-1">
                       <p className="font-medium">
                         {u.username}
-                        {u.group?.name === "SUPER_ADMIN" && (
-                          <Label>ADMIN</Label>
-                        )}
+                        {u.group?.name === "SUPER_ADMIN" && <Label>ADMIN</Label>}
                         {u.group?.name === "GUEST" && <Label>GUEST</Label>}
                       </p>
                       <p className="text-sm text-theme-600 dark:text-theme-400">
@@ -202,7 +180,7 @@ export default function ViewUsersDialog({
                       </p>
                     </div>
 
-                    {/* right controls */}
+                    {/* RIGHT */}
                     {!isImmutable(u) && (
                       <div className="flex items-center gap-3">
                         <ViewUserFilesDialog
@@ -235,7 +213,7 @@ export default function ViewUsersDialog({
   );
 }
 
-/* tiny helper for “ADMIN / GUEST” badges */
+/* helper badge */
 function Label({ children }: { children: React.ReactNode }) {
   return (
     <span className="ml-2 text-[10px] px-2 py-0.5 rounded bg-theme-300 dark:bg-theme-700">

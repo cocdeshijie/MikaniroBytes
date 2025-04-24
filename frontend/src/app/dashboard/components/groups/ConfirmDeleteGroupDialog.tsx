@@ -2,66 +2,53 @@
 
 import { useMemo } from "react";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
-import * as Checkbox     from "@radix-ui/react-checkbox";
+import * as Checkbox from "@radix-ui/react-checkbox";
 import { cn } from "@/utils/cn";
 import { useToast } from "@/providers/toast-provider";
 import type { GroupItem } from "@/types/sharedTypes";
 import { BiCheck } from "react-icons/bi";
 import { atom, useAtom } from "jotai";
+import { api, ApiError } from "@/lib/api";
 
 export default function ConfirmDeleteGroupDialog({
-                                                     group,
-                                                     sessionToken,
-                                                     onDeleted,
-                                                     className
-                                                 }: {
-    group: GroupItem,
-    sessionToken: string,
-    onDeleted: (groupId: number) => void,
-    className?: string
+  group,
+  sessionToken,
+  onDeleted,
+}: {
+  group: GroupItem;
+  sessionToken: string;
+  onDeleted: (groupId: number) => void;
 }) {
   const { push } = useToast();
 
-  /* ---------- local atoms ---------- */
-  const [open,        setOpen]        = useAtom(useMemo(() => atom(false), []));
-  const [deleteFiles, setDeleteFiles] = useAtom(useMemo(() => atom(false), []));
-  const [loading,     setLoading]     = useAtom(useMemo(() => atom(false), []));
+  const [open, setOpen]       = useAtom(useMemo(() => atom(false), []));
+  const [deleteFiles, setDF]  = useAtom(useMemo(() => atom(false), []));
+  const [loading, setLoad]    = useAtom(useMemo(() => atom(false), []));
 
-  /* --------------- confirm handler --------------- */
+  /* ------------------------------------------------------------------ */
   async function handleConfirm() {
-    setLoading(true);
+    setLoad(true);
     try {
-      const url =
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/groups/${group.id}` +
-        `?delete_files=${deleteFiles}`;
-      const res = await fetch(url, {
-        method : "DELETE",
-        headers: { Authorization: `Bearer ${sessionToken}` },
-      });
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        throw new Error(d.detail ?? "Failed to delete group");
-      }
-
+      await api<void>(
+        `/admin/groups/${group.id}?delete_files=${deleteFiles}`,
+        { method: "DELETE", token: sessionToken },
+      );
       onDeleted(group.id);
       setOpen(false);
-      push({
-        title      : "Group deleted",
-        description: group.name,
-        variant    : "success",
-      });
-    } catch (e: any) {
-      push({ title: e.message ?? "Delete failed", variant: "error" });
-    } finally { setLoading(false); }
+      push({ title: "Group deleted", description: group.name, variant: "success" });
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "Delete failed";
+      push({ title: msg, variant: "error" });
+    } finally {
+      setLoad(false);
+    }
   }
 
-  /* ----------------------------- UI ------------------------------ */
+  /* ------------------------------------------------------------------ */
   return (
     <AlertDialog.Root open={open} onOpenChange={setOpen}>
       <AlertDialog.Trigger asChild>
-        <button
-          className="px-3 py-1.5 rounded text-white bg-red-600 hover:bg-red-700 transition-colors"
-        >
+        <button className="px-3 py-1.5 rounded text-white bg-red-600 hover:bg-red-700">
           Delete
         </button>
       </AlertDialog.Trigger>
@@ -71,7 +58,7 @@ export default function ConfirmDeleteGroupDialog({
         <AlertDialog.Content
           className={cn(
             "fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2",
-            "bg-theme-50 dark:bg-theme-900 rounded-lg shadow-lg max-w-sm w-full p-6"
+            "bg-theme-50 dark:bg-theme-900 rounded-lg shadow-lg max-w-sm w-full p-6",
           )}
         >
           <AlertDialog.Title className="text-lg font-medium text-red-600 dark:text-red-400 mb-2">
@@ -83,17 +70,16 @@ export default function ConfirmDeleteGroupDialog({
             also choose to delete every file they have uploaded.
           </AlertDialog.Description>
 
-          {/* -------- Radix checkbox -------- */}
           <div className="flex items-center gap-2 mb-4">
             <Checkbox.Root
               id={`del_group_${group.id}`}
               checked={deleteFiles}
-              onCheckedChange={(v) => setDeleteFiles(!!v)}
+              onCheckedChange={(v) => setDF(!!v)}
               className={cn(
                 "h-4 w-4 shrink-0 rounded border",
                 "border-theme-400 dark:border-theme-600 bg-white dark:bg-theme-800",
                 "flex items-center justify-center",
-                "data-[state=checked]:bg-theme-500"
+                "data-[state=checked]:bg-theme-500",
               )}
             >
               <Checkbox.Indicator>
@@ -111,9 +97,7 @@ export default function ConfirmDeleteGroupDialog({
 
           <div className="flex justify-end gap-2">
             <AlertDialog.Cancel asChild>
-              <button
-                className="px-4 py-2 rounded border border-theme-300 dark:border-theme-700"
-              >
+              <button className="px-4 py-2 rounded border border-theme-300 dark:border-theme-700">
                 Cancel
               </button>
             </AlertDialog.Cancel>
@@ -123,7 +107,7 @@ export default function ConfirmDeleteGroupDialog({
                 onClick={handleConfirm}
                 className={cn(
                   "px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700",
-                  loading && "disabled:bg-red-300"
+                  loading && "disabled:bg-red-300",
                 )}
               >
                 {loading ? "Deleting…" : "Yes, delete"}
