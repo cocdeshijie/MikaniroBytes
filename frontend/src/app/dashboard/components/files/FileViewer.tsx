@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useCallback, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useCallback,
+  useState,
+} from "react";
 import { cn } from "@/utils/cn";
 import { iconFor } from "@/utils/fileIcons";
 import * as ContextMenu from "@radix-ui/react-context-menu";
@@ -15,6 +21,8 @@ import {
 } from "react-icons/fi";
 import { useLasso } from "@/hooks/useLasso";
 import { useToast } from "@/providers/toast-provider";
+import { filesNeedsRefreshAtom } from "@/atoms/fileAtoms";
+import { useAtom } from "jotai";
 
 /* ----------------------------------------------------------------- */
 export interface RemoteFile {
@@ -25,16 +33,16 @@ export interface RemoteFile {
 
 interface Props {
   fetchEndpoint: string;
-  sessionToken?: string;          /** JWT – useSession().accessToken */
+  sessionToken?: string; /** JWT – useSession().accessToken */
   readOnly?: boolean;
-  title?: string;                 /** optional heading shown above the toolbar */
+  title?: string;        /** optional heading shown above the toolbar */
 }
 
 /* ---------- helpers ------------------------------------------------ */
 function shortenFilename(full: string, limit = 26): string {
   if (full.length <= limit) return full;
-  const dot  = full.lastIndexOf(".");
-  const ext  = dot !== -1 ? full.slice(dot) : "";
+  const dot = full.lastIndexOf(".");
+  const ext = dot !== -1 ? full.slice(dot) : "";
   const base = dot !== -1 ? full.slice(0, dot) : full;
   const tail = Math.min(4, base.length);
   const avail = limit - ext.length - 3 - tail;
@@ -56,18 +64,22 @@ export default function FileViewer({
   const { push } = useToast();
 
   /* ---------------- state ---------------- */
-  const [files, setFiles]           = useState<RemoteFile[]>([]);
-  const [loading, setLoading]       = useState(false);
-  const [errorMsg, setErr]          = useState("");
-  const [selectedIds, setSel]       = useState<Set<number>>(new Set());
-  const [downloadingId, setDL]      = useState<number | null>(null);
-  const [zipBusy, setZipBusy]       = useState(false);               // ← NEW
+  const [files, setFiles] = useState<RemoteFile[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErr] = useState("");
+  const [selectedIds, setSel] = useState<Set<number>>(new Set());
+  const [downloadingId, setDL] = useState<number | null>(null);
+  const [zipBusy, setZipBusy] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+
+  /* -------- global refresh flag -------- */
+  const [needsRefresh, setNeedsRefresh] = useAtom(filesNeedsRefreshAtom);
 
   /* ---------------- fetch list ---------------- */
   useEffect(() => {
     (async () => {
-      setLoading(true); setErr("");
+      setLoading(true);
+      setErr("");
       try {
         const res = await fetch(fetchEndpoint, {
           headers: sessionToken
@@ -80,9 +92,10 @@ export default function FileViewer({
         setErr(e.message || "Load error");
       } finally {
         setLoading(false);
+        if (needsRefresh) setNeedsRefresh(false); // reset global flag
       }
     })();
-  }, [fetchEndpoint, sessionToken]);
+  }, [fetchEndpoint, sessionToken, needsRefresh]); // ★ ‘needsRefresh’ dep
 
   /* ---------------- selection helpers ---------------- */
   const toggleSelect = useCallback(
@@ -148,7 +161,7 @@ export default function FileViewer({
     }
   };
 
-  /* -------- NEW: batch‑download ZIP -------- */
+  /* -------- NEW: batch-download ZIP -------- */
   const downloadZip = async () => {
     if (zipBusy || selectedIds.size < 2) return;
     setZipBusy(true);
@@ -157,7 +170,7 @@ export default function FileViewer({
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/files/batch-download`,
         {
-          method : "POST",
+          method: "POST",
           headers: {
             "Content-Type": "application/json",
             ...(sessionToken && { Authorization: `Bearer ${sessionToken}` }),
@@ -193,7 +206,7 @@ export default function FileViewer({
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/files/batch-delete`,
         {
-          method : "DELETE",
+          method: "DELETE",
           headers: {
             "Content-Type": "application/json",
             ...(sessionToken && { Authorization: `Bearer ${sessionToken}` }),
@@ -205,7 +218,7 @@ export default function FileViewer({
         const d = await res.json().catch(() => ({}));
         throw new Error(d.detail || "Delete failed");
       }
-      const { deleted } = await res.json();   // -> { deleted: [...] }
+      const { deleted } = await res.json(); // -> { deleted: [...] }
       setFiles((p) => p.filter((f) => !deleted.includes(f.file_id)));
       clearSel();
       push({
@@ -277,18 +290,16 @@ export default function FileViewer({
   }
 
   /* ---------------- derived ---------------- */
-  const selCount     = selectedIds.size;
-  const firstId      = Array.from(selectedIds)[0];
-  const selectedOne  =
+  const selCount = selectedIds.size;
+  const firstId = Array.from(selectedIds)[0];
+  const selectedOne =
     selCount === 1 ? files.find((f) => f.file_id === firstId) : null;
 
   /* ---------------- render ---------------- */
   return (
     <AlertDialog.Root open={confirmOpen} onOpenChange={setConfirmOpen}>
       <div>
-        {title && (
-          <h4 className="text-lg font-medium mb-3">{title}</h4>
-        )}
+        {title && <h4 className="text-lg font-medium mb-3">{title}</h4>}
 
         {/* toolbar */}
         <div className="mb-3 flex items-center gap-3 min-h-[34px]">
@@ -393,7 +404,11 @@ export default function FileViewer({
                        data-[side=top]:mb-1 data-[side=bottom]:mt-1"
           >
             {/* open in new tab */}
-            <CMI onSelect={() => selectedOne && window.open(absolute(selectedOne.direct_link), "_blank")}>
+            <CMI
+              onSelect={() =>
+                selectedOne && window.open(absolute(selectedOne.direct_link), "_blank")
+              }
+            >
               <FiExternalLink className="mr-2" /> Open in new tab
             </CMI>
 
@@ -420,7 +435,10 @@ export default function FileViewer({
             {!readOnly && (
               <>
                 <ContextMenu.Separator className="h-px my-1 bg-theme-200 dark:bg-theme-700" />
-                <CMI onSelect={() => setConfirmOpen(true)} className="text-red-600">
+                <CMI
+                  onSelect={() => setConfirmOpen(true)}
+                  className="text-red-600"
+                >
                   <FiTrash className="mr-2" /> Delete
                 </CMI>
               </>
