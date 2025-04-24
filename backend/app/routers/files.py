@@ -4,6 +4,7 @@ import os
 import secrets
 import time
 import zipfile
+from datetime import datetime
 from typing import List, Optional
 
 from fastapi import (
@@ -43,6 +44,26 @@ def is_super_admin(user: User) -> bool:
 def disk_path(rel_path: str) -> str:
     """Convert a relative DB path into an absolute path on disk."""
     return os.path.join(UPLOAD_DIR, rel_path)
+
+
+def render_path_template(template: str, now: datetime) -> str:
+    """
+    Render {Y}, {m}, {d}, {H}, {M}, {S} tokens in *template* using *now*.
+    Falls back to empty string on any problems.
+    """
+    try:
+        return (
+            template.replace("{Y}", now.strftime("%Y"))
+            .replace("{m}", now.strftime("%m"))
+            .replace("{d}", now.strftime("%d"))
+            .replace("{H}", now.strftime("%H"))
+            .replace("{M}", now.strftime("%M"))
+            .replace("{S}", now.strftime("%S"))
+            .strip("/")
+            .strip("\\")
+        )
+    except Exception:
+        return ""
 
 # -----------------------------------------------------------------------------
 # Pydantic DTOs
@@ -189,11 +210,10 @@ def batch_download_files(
     }
     return StreamingResponse(buffer, headers=headers)
 
+
 # ============================================================================
 # 3) Single UPLOAD (unchanged except for docstring re‑wrap)
 # ============================================================================
-
-
 @router.post("/upload")
 def upload_file(
     request: Request,
@@ -202,7 +222,7 @@ def upload_file(
     current_user: Optional[User] = Depends(get_optional_user),
 ):
     """Accept a single file upload and persist it on disk and in the DB."""
-    # ---------- public‑upload gate ----------------------------------
+    # ---------- public-upload gate ----------------------------------
     settings = db.query(SystemSettings).first()
     if current_user is None:
         if settings and not settings.public_upload_enabled:
@@ -224,9 +244,20 @@ def upload_file(
     _, ext = os.path.splitext(file.filename)
     hashed_name = hashed + ext.lower()
 
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
-    path = os.path.join(UPLOAD_DIR, hashed_name)
-    with open(path, "wb") as out:
+    # ---- determine sub-directory from template --------------------
+    template = (
+        settings.upload_path_template
+        if settings and settings.upload_path_template
+        else "{Y}/{m}"
+    )
+    rel_dir = render_path_template(template, datetime.utcnow())  # e.g. "2025/04"
+    target_dir = os.path.join(UPLOAD_DIR, rel_dir)
+    os.makedirs(target_dir, exist_ok=True)
+
+    rel_file_path = os.path.join(rel_dir, hashed_name) if rel_dir else hashed_name
+    abs_file_path = os.path.join(target_dir, hashed_name)
+
+    with open(abs_file_path, "wb") as out:
         out.write(contents)
 
     # ---------------- owner -----------------------
@@ -242,7 +273,7 @@ def upload_file(
         size=len(contents),
         file_type=FileType.BASE,
         storage_type=StorageType.LOCAL,
-        storage_data={"path": hashed_name},
+        storage_data={"path": rel_file_path},
         content_type=file.content_type or "application/octet-stream",
         user_id=owner_id,
         original_filename=file.filename,
@@ -255,16 +286,15 @@ def upload_file(
     return {
         "detail": "File uploaded successfully",
         "file_id": db_file.id,
-        "direct_link": f"{base_url}/uploads/{hashed_name}",
+        "direct_link": f"{base_url}/uploads/{rel_file_path}",
         "download_link": f"{base_url}/files/download/{db_file.id}",
         "original_filename": file.filename,
     }
 
+
 # ============================================================================
 # 4) My Files list (unchanged)
 # ============================================================================
-
-
 @router.get("/my-files", response_model=List[MyFileItem])
 def list_my_files(
     request: Request,
