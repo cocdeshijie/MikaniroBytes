@@ -10,7 +10,13 @@ import { filesNeedsRefreshAtom } from "@/atoms/fileAtoms";
 import { cn } from "@/utils/cn";
 import { useToast } from "@/providers/toast-provider";
 import { useSession } from "next-auth/react";
-import { FormEvent, DragEvent, useRef } from "react";
+import {
+  FormEvent,
+  DragEvent,
+  useRef,
+  useCallback,
+  useEffect,            // ← NEW
+} from "react";
 import { atom, useAtom } from "jotai";
 import UploadItem from "@/components/UploadItem";
 
@@ -25,7 +31,7 @@ const pendingCountAtom = atom((get) =>
 /* ------------------------------------------------------------------ */
 /*                            HELPERS                                 */
 /* ------------------------------------------------------------------ */
-function parseUploadError(raw: string | null): string {
+const parseUploadError = (raw: string | null): string => {
   if (!raw) return "Upload failed";
   try {
     const data = JSON.parse(raw);
@@ -34,7 +40,7 @@ function parseUploadError(raw: string | null): string {
   } catch {
     return raw;
   }
-}
+};
 
 /* ------------------------------------------------------------------ */
 /*                             COMPONENT                              */
@@ -52,7 +58,49 @@ export default function Home() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  /* ---------------- Drag & Drop ------------------- */
+  /* ------------------------------------------------------------------
+   *  Selecting / appending new File objects
+   * ------------------------------------------------------------------ */
+  const appendFiles = useCallback(
+    (fileList: FileList | null) => {
+      if (!fileList || fileList.length === 0) return;
+      const newTasks: UploadTask[] = Array.from(fileList).map((f) => ({
+        id: crypto.randomUUID(),
+        file: f,
+        progress: 0,
+        status: "pending",
+      }));
+      setTasks((prev) => [...prev, ...newTasks]);
+    },
+    [setTasks]
+  );
+
+  /* ------------------------------------------------------------------
+   *  Clipboard paste → treat like file selection
+   * ------------------------------------------------------------------ */
+  useEffect(() => {
+    const handler = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("input,textarea,[contenteditable='true']")) return;
+
+      const files = e.clipboardData?.files;
+      if (files && files.length) {
+        e.preventDefault();
+        appendFiles(files);
+        push({
+          title: `Added ${files.length} file${files.length > 1 ? "s" : ""} from clipboard`,
+          variant: "info",
+        });
+      }
+    };
+
+    window.addEventListener("paste", handler);
+    return () => window.removeEventListener("paste", handler);
+  }, [appendFiles, push]);
+
+  /* ------------------------------------------------------------------
+   *  Drag & Drop
+   * ------------------------------------------------------------------ */
   const onDragOver = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     if (!isDragging) setIsDragging(true);
@@ -67,23 +115,14 @@ export default function Home() {
     appendFiles(e.dataTransfer.files);
   };
 
-  /* ---------------- select (click) ---------------- */
-  const appendFiles = (fileList: FileList | null) => {
-    if (!fileList) return;
-    const newTasks: UploadTask[] = Array.from(fileList).map((f) => ({
-      id: crypto.randomUUID(),
-      file: f,
-      progress: 0,
-      status: "pending",
-    }));
-    setTasks((prev) => [...prev, ...newTasks]);
-  };
-
-  /* ---------------- upload ---------------- */
-  const handleUpload = async (e: FormEvent) => {
+  /* ------------------------------------------------------------------
+   *  Upload
+   * ------------------------------------------------------------------ */
+  const handleUpload = (e: FormEvent) => {
     e.preventDefault();
-    const toStart = tasks.filter((t) => t.status === "pending");
-    toStart.forEach(startUpload);
+    tasks
+      .filter((t) => t.status === "pending")
+      .forEach(startUpload);
   };
 
   const startUpload = (task: UploadTask) => {
@@ -94,10 +133,7 @@ export default function Home() {
     );
 
     const xhr = new XMLHttpRequest();
-    xhr.open(
-      "POST",
-      `${process.env.NEXT_PUBLIC_BACKEND_URL}/files/upload`
-    );
+    xhr.open("POST", `${process.env.NEXT_PUBLIC_BACKEND_URL}/files/upload`);
 
     if (session?.accessToken) {
       xhr.setRequestHeader("Authorization", `Bearer ${session.accessToken}`);
@@ -150,9 +186,9 @@ export default function Home() {
     xhr.send(formData);
   };
 
-  /* ------------------------------------------------------------------ */
-  /*                               JSX                                  */
-  /* ------------------------------------------------------------------ */
+  /* ------------------------------------------------------------------
+   *  JSX
+   * ------------------------------------------------------------------ */
 
   return (
     <div className="relative bg-theme-50 dark:bg-theme-950">
@@ -166,17 +202,15 @@ export default function Home() {
               "flex items-center flex-wrap justify-center gap-2 mb-4"
             )}
           >
-            Welcome to FileBed
-            <div className="h-1 w-16 bg-theme-500 rounded-full inline-block ml-2" />
+            Welcome!
           </h1>
           <p className="max-w-2xl text-center text-theme-700 dark:text-theme-300 text-lg mb-8">
-            Host and manage your files with the power of FastAPI + Next.js.
+            Host and manage your files.
           </p>
         </div>
 
         {/* Upload portal */}
         <div className="w-full max-w-3xl mx-auto mb-16">
-          {/* ------------ SELECT + DRAG AREA ------------- */}
           <form
             onSubmit={handleUpload}
             className={cn(
@@ -215,10 +249,10 @@ export default function Home() {
                 />
               </svg>
               <p className="text-theme-700 dark:text-theme-300 text-lg font-medium mb-1">
-                Drag & drop files here
+                Drag & drop files here, paste, or click to browse
               </p>
               <p className="text-theme-500 dark:text-theme-400 text-sm">
-                or click to browse
+                Supports ⌘ V / Ctrl V from clipboard
               </p>
               <input
                 ref={fileInputRef}
