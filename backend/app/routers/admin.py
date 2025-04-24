@@ -39,7 +39,7 @@ def get_guest_user(db: Session) -> User:
     if not guest:
         raise HTTPException(
             status_code=500,
-            detail="Guest user missing – did you run init_db() on start‑up?",
+            detail="Guest user missing – did you run init_db() on start-up?",
         )
     return guest
 
@@ -82,7 +82,7 @@ class GroupRead(BaseModel):
     storage_bytes: int
 
     class Config:
-        from_attributes = True  # pydantic‑v2
+        from_attributes = True  # pydantic-v2
 
 
 class GroupUpdate(BaseModel):
@@ -112,12 +112,14 @@ class SystemSettingsRead(BaseModel):
     registration_enabled: bool
     public_upload_enabled: bool
     default_user_group_id: Optional[int]
+    upload_path_template: str
 
 
 class SystemSettingsUpdate(BaseModel):
     registration_enabled: Optional[bool] = None
     public_upload_enabled: Optional[bool] = None
     default_user_group_id: Optional[int] = None
+    upload_path_template: Optional[str] = None
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -323,6 +325,7 @@ def delete_group(
         "files_reassigned": not delete_files,
     }
 
+
 # ────────────────────────────────────────────────────────────────────
 #  Users API
 # ────────────────────────────────────────────────────────────────────
@@ -446,6 +449,7 @@ def delete_user(
         "files_reassigned": not delete_files,
     }
 
+
 # ────────────────────────────────────────────────────────────────────
 #  File lists (admin)
 # ────────────────────────────────────────────────────────────────────
@@ -497,6 +501,7 @@ def list_user_files(
         for f in rows
     ]
 
+
 # ────────────────────────────────────────────────────────────────────
 #  System settings
 # ────────────────────────────────────────────────────────────────────
@@ -512,11 +517,13 @@ def get_system_settings(
             registration_enabled=True,
             public_upload_enabled=False,
             default_user_group_id=None,
+            upload_path_template="{Y}/{m}",
         )
     return SystemSettingsRead(
         registration_enabled=s.registration_enabled,
         public_upload_enabled=s.public_upload_enabled,
         default_user_group_id=s.default_user_group_id,
+        upload_path_template=s.upload_path_template,
     )
 
 
@@ -543,6 +550,11 @@ def update_system_settings(
                 detail=f"{grp.name} cannot be the default user group.",
             )
         s.default_user_group_id = grp.id
+    if payload.upload_path_template is not None:
+        # Basic sanity check – don't allow absolute paths or ".."
+        if payload.upload_path_template.startswith(("/", "\\")) or ".." in payload.upload_path_template:
+            raise HTTPException(status_code=400, detail="Invalid path template.")
+        s.upload_path_template = payload.upload_path_template.strip() or "{Y}/{m}"
 
     db.add(s)
     db.commit()
@@ -552,4 +564,5 @@ def update_system_settings(
         registration_enabled=s.registration_enabled,
         public_upload_enabled=s.public_upload_enabled,
         default_user_group_id=s.default_user_group_id,
+        upload_path_template=s.upload_path_template,
     )
