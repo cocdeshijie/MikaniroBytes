@@ -6,35 +6,49 @@ import { BACKEND_URL, NEXTAUTH_SECRET } from "@/lib/env";
 import { api } from "@/lib/api";
 
 /* ────────────────────────────────────────────────────────────────
-   1)  Inline module-augmentation
-   (you can move this to   src/types/next-auth.d.ts   later)
+   1)  Module-augmentation – add username, email, groupName
    ────────────────────────────────────────────────────────────────*/
 declare module "next-auth" {
   interface Session {
-    /** JWT issued by FastAPI – available via `useSession()` */
-    accessToken?: string;
+    accessToken: string;
+    user: {
+      id: string;            // string in the session object
+      username: string;
+      email?: string | null;
+      groupName?: string;
+    };
   }
+
   interface User {
-    id: string;      // we return this from `authorize`
-    token: string;   // FastAPI `access_token`
+    id: number;
+    username: string;
+    email?: string | null;
+    groupName: string;
+    token: string;           // FastAPI access_token
   }
 }
 
 declare module "next-auth/jwt" {
   interface JWT {
     accessToken?: string;
+    id?: number;
+    username?: string;
+    email?: string | null;
+    groupName?: string;
   }
 }
 
 /* ────────────────────────────────────────────────────────────────
-   2)  Auth configuration
+   2)  Auth options
    ────────────────────────────────────────────────────────────────*/
 export const authOptions: NextAuthOptions = {
   secret: NEXTAUTH_SECRET,
+
   session: {
     strategy: "jwt",
-    maxAge: 60 * 60 * 24 * 7, // 7 days
+    maxAge  : 60 * 60 * 24 * 7, // 7 days
   },
+
   providers: [
     CredentialsProvider({
       name: "Credentials",
@@ -46,30 +60,59 @@ export const authOptions: NextAuthOptions = {
         if (!credentials?.username || !credentials.password) {
           throw new Error("Missing username or password");
         }
-        /* ⬇️ use api() instead of raw fetch */
-        const data = await api<{ access_token: string }>(
+
+        /* 1️⃣  Login → get access_token */
+        const { access_token } = await api<{ access_token: string }>(
           "/auth/login",
           {
             method: "POST",
-            json: {
+            json  : {
               username: credentials.username,
               password: credentials.password,
             },
-            // api() prefixes BACKEND_URL automatically
           },
         );
-        return { id: credentials.username, token: data.access_token };
+
+        /* 2️⃣  /auth/me for profile data */
+        const me = await api<{
+          id: number;
+          username: string;
+          email?: string | null;
+          group: { name: string } | null;
+        }>("/auth/me", { token: access_token });
+
+        return {
+          id        : me.id,
+          username  : me.username,
+          email     : me.email ?? null,
+          groupName : me.group?.name ?? "GUEST",
+          token     : access_token,
+        };
       },
     }),
   ],
 
   callbacks: {
+    /* ▸  runs at sign-in and every request */
     async jwt({ token, user }) {
-      if (user && "token" in user) token.accessToken = user.token;
+      if (user && "token" in user) {
+        token.accessToken = user.token;
+        /* ensure numeric — satisfies TS narrow type */
+        token.id         = typeof user.id === "string" ? Number(user.id) : user.id;
+        token.username   = user.username;
+        token.email      = user.email;
+        token.groupName  = user.groupName;
+      }
       return token;
     },
+
+    /* ▸  expose on client via useSession() */
     async session({ session, token }: { session: Session; token: JWT }) {
-      if (token.accessToken) session.accessToken = token.accessToken;
+      session.accessToken     = token.accessToken as string;
+      session.user.id         = String(token.id);
+      session.user.username   = token.username as string;
+      session.user.email      = token.email ?? null;
+      session.user.groupName  = token.groupName;
       return session;
     },
   },
