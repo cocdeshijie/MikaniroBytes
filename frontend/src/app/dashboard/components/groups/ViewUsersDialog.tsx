@@ -44,7 +44,7 @@ export default function ViewUsersDialog({
   const loadingA = useMemo(() => atom(false), [group.id]);
   const errorA   = useMemo(() => atom(""), [group.id]);
   const usersA   = useMemo(() => atom<UserItem[]>([]), [group.id]);
-  const groupsA  = useMemo(() => atom<{ id:number; name:string }[]>([]), [group.id]);
+  const groupsA  = useMemo(() => atom<{ id: number; name: string }[]>([]), [group.id]);
 
   const [open, setOpen]       = useAtom(openA);
   const [loading, setLoading] = useAtom(loadingA);
@@ -169,7 +169,7 @@ export default function ViewUsersDialog({
                       <p className="font-medium">
                         {u.username}
                         {u.group?.name === "SUPER_ADMIN" && <Label>ADMIN</Label>}
-                        {u.group?.name === "GUEST" && <Label>GUEST</Label>}
+                        {u.group?.name === "GUEST"        && <Label>GUEST</Label>}
                       </p>
                       <p className="text-sm text-theme-600 dark:text-theme-400">
                         {u.email || "(no email)"}
@@ -188,13 +188,11 @@ export default function ViewUsersDialog({
                           username={u.username}
                           sessionToken={sessionToken}
                         />
-
                         <MoveUserSelect
                           currentGroupId={group.id}
                           groups={groups}
                           onSelect={(gid) => moveUser(u.id, gid)}
                         />
-
                         <ConfirmDeleteUserDialog
                           user={u}
                           sessionToken={sessionToken}
