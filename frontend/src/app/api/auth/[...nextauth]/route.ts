@@ -2,6 +2,8 @@ import NextAuth, { type NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import type { Session } from "next-auth";
 import type { JWT } from "next-auth/jwt";
+import { BACKEND_URL, NEXTAUTH_SECRET } from "@/lib/env";
+import { api } from "@/lib/api";
 
 /* ────────────────────────────────────────────────────────────────
    1)  Inline module-augmentation
@@ -28,7 +30,7 @@ declare module "next-auth/jwt" {
    2)  Auth configuration
    ────────────────────────────────────────────────────────────────*/
 export const authOptions: NextAuthOptions = {
-  secret: process.env.NEXTAUTH_SECRET,
+  secret: NEXTAUTH_SECRET,
   session: {
     strategy: "jwt",
     maxAge: 60 * 60 * 24 * 7, // 7 days
@@ -44,49 +46,34 @@ export const authOptions: NextAuthOptions = {
         if (!credentials?.username || !credentials.password) {
           throw new Error("Missing username or password");
         }
-
-        const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL!;
-        const res = await fetch(`${BACKEND_URL}/auth/login`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            username: credentials.username,
-            password: credentials.password,
-          }),
-        });
-
-        if (!res.ok) throw new Error("Invalid credentials or server error");
-        const data: { access_token?: string } = await res.json();
-        if (!data.access_token) throw new Error("No access token returned");
-
-        /* this object becomes `user` in the JWT callback */
+        /* ⬇️ use api() instead of raw fetch */
+        const data = await api<{ access_token: string }>(
+          "/auth/login",
+          {
+            method: "POST",
+            json: {
+              username: credentials.username,
+              password: credentials.password,
+            },
+            // api() prefixes BACKEND_URL automatically
+          },
+        );
         return { id: credentials.username, token: data.access_token };
       },
     }),
   ],
 
   callbacks: {
-    /* put the FastAPI token inside the JWT cookie */
     async jwt({ token, user }) {
-      if (user && "token" in user) {
-        token.accessToken = user.token;
-      }
+      if (user && "token" in user) token.accessToken = user.token;
       return token;
     },
-
-    /* expose it to the client session */
     async session({ session, token }: { session: Session; token: JWT }) {
-      if (token.accessToken) {
-        session.accessToken = token.accessToken;
-      }
+      if (token.accessToken) session.accessToken = token.accessToken;
       return session;
     },
   },
 };
 
-/* ────────────────────────────────────────────────────────────────
-   3)  Handler export (Edge-compatible)
-   ────────────────────────────────────────────────────────────────*/
 const handler = NextAuth(authOptions);
-
 export { handler as GET, handler as POST };
