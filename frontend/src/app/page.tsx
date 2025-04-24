@@ -15,10 +15,11 @@ import {
   DragEvent,
   useRef,
   useCallback,
-  useEffect,            // ← NEW
+  useEffect,
 } from "react";
 import { atom, useAtom } from "jotai";
 import UploadItem from "@/components/UploadItem";
+import { uploadFile } from "@/lib/files";
 
 /* ------------------------------------------------------------------ */
 /*                       local derived atoms                          */
@@ -31,16 +32,8 @@ const pendingCountAtom = atom((get) =>
 /* ------------------------------------------------------------------ */
 /*                            HELPERS                                 */
 /* ------------------------------------------------------------------ */
-const parseUploadError = (raw: string | null): string => {
-  if (!raw) return "Upload failed";
-  try {
-    const data = JSON.parse(raw);
-    if (data && typeof data.detail === "string") return data.detail;
-    return raw;
-  } catch {
-    return raw;
-  }
-};
+const parseUploadError = (raw: string | null): string =>
+  raw ? raw : "Upload failed";
 
 /* ------------------------------------------------------------------ */
 /*                             COMPONENT                              */
@@ -132,30 +125,16 @@ export default function Home() {
       )
     );
 
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${process.env.NEXT_PUBLIC_BACKEND_URL}/files/upload`);
-
-    if (session?.accessToken) {
-      xhr.setRequestHeader("Authorization", `Bearer ${session.accessToken}`);
-    }
-
-    xhr.upload.addEventListener("progress", (ev) => {
-      if (ev.lengthComputable) {
-        const pct = Math.round((ev.loaded / ev.total) * 100);
+    uploadFile(task.file, {
+      token: session?.accessToken,
+      onProgress: (pct) =>
         setTasks((prev) =>
-          prev.map((t) => (t.id === task.id ? { ...t, progress: pct } : t))
-        );
-      }
-    });
-
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        const data = JSON.parse(xhr.responseText);
-        const result = {
-          file_id: data.file_id,
-          original_filename: data.original_filename,
-          direct_link: data.direct_link,
-        };
+          prev.map((t) =>
+            t.id === task.id ? { ...t, progress: pct } : t
+          )
+        ),
+    })
+      .then((result) => {
         setTasks((prev) =>
           prev.map((t) =>
             t.id === task.id
@@ -165,27 +144,17 @@ export default function Home() {
         );
         setUploadedItems((prev) => [result, ...prev]);
         setNeedsRefresh(true);
-      } else {
-        fail(parseUploadError(xhr.responseText));
-      }
-    };
-
-    xhr.onerror = () => fail("Network error");
-
-    const fail = (msg: string) => {
-      setTasks((prev) =>
-        prev.map((t) =>
-          t.id === task.id ? { ...t, status: "error", error: msg } : t
-        )
-      );
-      push({ title: "Upload failed", description: msg, variant: "error" });
-    };
-
-    const formData = new FormData();
-    formData.append("file", task.file);
-    xhr.send(formData);
+      })
+      .catch((e) => {
+        const msg = parseUploadError(e?.message ?? null);
+        setTasks((prev) =>
+          prev.map((t) =>
+            t.id === task.id ? { ...t, status: "error", error: msg } : t
+          )
+        );
+        push({ title: "Upload failed", description: msg, variant: "error" });
+      });
   };
-
   /* ------------------------------------------------------------------
    *  JSX
    * ------------------------------------------------------------------ */

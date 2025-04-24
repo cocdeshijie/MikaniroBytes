@@ -1,39 +1,24 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useMemo } from "react";
+import { ChangeEvent, FormEvent, useMemo } from "react";
 import { useSession } from "next-auth/react";
-import {
-  FiUpload,
-  FiCheck,
-  FiX,
-  FiFile,
-  FiLoader,
-} from "react-icons/fi";
+import { FiUpload, FiCheck, FiX } from "react-icons/fi";
 import { cn } from "@/utils/cn";
 import { useToast } from "@/lib/toast";
 import { filesNeedsRefreshAtom } from "@/atoms/fileAtoms";
 import { atom, useAtom } from "jotai";
-
-type Phase = "idle" | "selected" | "uploading" | "done" | "error";
-
-interface FailedItem {
-  path: string;
-  reason: string;
-}
-interface ApiOk {
-  success: number;
-  failed: number | FailedItem[];
-  total?: number;
-  result_text?: string;
-}
+import {
+  bulkUpload,
+  BulkUploadResponse,
+} from "@/lib/files";
 
 /* ─────────── local jotai atoms ─────────── */
-const phaseA = () => atom<Phase>("idle");
-const fileA = () => atom<File | null>(null);
-const progressA = () => atom(0);
-const txtUrlA = () => atom<string | null>(null);
-const infoLineA = () => atom("");
-const errorMsgA = () => atom("");
+const phaseA     = () => atom<"idle" | "selected" | "uploading" | "done" | "error">("idle");
+const fileA      = () => atom<File | null>(null);
+const progressA  = () => atom(0);
+const txtUrlA    = () => atom<string | null>(null);
+const infoLineA  = () => atom("");
+const errorMsgA  = () => atom("");
 
 export default function BulkUpload() {
   const { data: session } = useSession();
@@ -41,112 +26,79 @@ export default function BulkUpload() {
 
   const [, setNeedsRefresh] = useAtom(filesNeedsRefreshAtom);
 
-  const [phase, setPhase] = useAtom(useMemo(phaseA, []));
-  const [file, setFile] = useAtom(useMemo(fileA, []));
+  const [phase, setPhase]       = useAtom(useMemo(phaseA, []));
+  const [file, setFile]         = useAtom(useMemo(fileA, []));
   const [progress, setProgress] = useAtom(useMemo(progressA, []));
-  const [txtUrl, setTxtUrl] = useAtom(useMemo(txtUrlA, []));
-  const [infoLine, setInfoLine] = useAtom(useMemo(infoLineA, []));
-  const [errorMsg, setErr] = useAtom(useMemo(errorMsgA, []));
+  const [txtUrl, setTxtUrl]     = useAtom(useMemo(txtUrlA, []));
+  const [infoLine, setInfo]     = useAtom(useMemo(infoLineA, []));
+  const [errorMsg, setErr]      = useAtom(useMemo(errorMsgA, []));
 
-  /* revoke blob when component unmounts or new TXT arrives */
-  useEffect(
-    () => () => {
-      if (txtUrl) URL.revokeObjectURL(txtUrl);
-    },
-    [txtUrl],
-  );
-
-  /* ---------- handlers ---------- */
-  const onFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0] ?? null;
+  const reset = () => {
     if (txtUrl) URL.revokeObjectURL(txtUrl);
-    setTxtUrl(null);
+    setTxtUrl(null); setErr(""); setInfo("");
+  };
+
+  const onFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    reset();
+    const f = e.target.files?.[0] ?? null;
     setFile(f);
-    setErr("");
     setPhase(f ? "selected" : "idle");
   };
 
-  const onSubmit = (e: FormEvent) => {
+  /* ------------------------------------------------------------------
+   *                         SUBMIT / UPLOAD
+   * ------------------------------------------------------------------ */
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!file) return;
 
-    setPhase("uploading");
-    setProgress(0);
-    setErr("");
+    setPhase("uploading"); setProgress(0); setErr("");
 
-    /* ◀──── XMLHttpRequest gives us upload-progress events */
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${process.env.NEXT_PUBLIC_BACKEND_URL}/files/bulk-upload`);
+    try {
+      const res = await bulkUpload(file, {
+        token: session?.accessToken,
+        onProgress: setProgress,
+      });
 
-    if (session?.accessToken) {
-      xhr.setRequestHeader("Authorization", `Bearer ${session.accessToken}`);
+      const total =
+        res.total ??
+        (Array.isArray(res.failed)
+          ? res.failed.length + res.success
+          : (res.failed as number) + res.success);
+
+      const failedNum = Array.isArray(res.failed)
+        ? res.failed.length
+        : (res.failed as number);
+
+      /* build result.txt blob */
+      const txt =
+        res.result_text ??
+        [
+          `${res.success}/${total} success`,
+          `${failedNum} failed`,
+          "",
+          ...(Array.isArray(res.failed) ? res.failed.map((f) => `${f.path} — ${f.reason}`) : []),
+        ].join("\n");
+
+      const blob = new Blob([txt], { type: "text/plain" });
+      setTxtUrl(URL.createObjectURL(blob));
+      setInfo(`${res.success}/${total} succeeded | ${failedNum} failed`);
+      setPhase("done");
+      push({ title: "Bulk upload finished", variant: "success" });
+    } catch (e: any) {
+      setErr(e.message ?? "Upload failed");
+      setPhase("error");
+      push({ title: "Bulk upload failed", description: e.message, variant: "error" });
+    } finally {
+      /* always refresh viewer list */
+      setNeedsRefresh(true);
     }
+  }
 
-    xhr.upload.onprogress = (ev) => {
-      if (ev.lengthComputable) {
-        const pct = Math.round((ev.loaded / ev.total) * 100);
-        setProgress(pct);
-      }
-    };
+  /* ------------------------------------------------------------------
+   *                                UI
+   * ------------------------------------------------------------------ */
 
-    xhr.onload = () => {
-      /* viewer must reload irrespective of outcome */
-      setNeedsRefresh((v) => !v);
-
-      if (xhr.status < 200 || xhr.status >= 300) {
-        const { detail = "Upload failed" } = safeJSON(xhr.responseText);
-        handleError(detail);
-        return;
-      }
-
-      try {
-        const payload: ApiOk = safeJSON(xhr.responseText);
-
-        const total =
-          payload.total ??
-          (Array.isArray(payload.failed)
-            ? payload.failed.length + payload.success
-            : (payload.failed as number) + payload.success);
-
-        const failedNum = Array.isArray(payload.failed)
-          ? payload.failed.length
-          : (payload.failed as number);
-
-        const txt =
-          payload.result_text ??
-          [
-            `${payload.success}/${total} success`,
-            `${failedNum} failed`,
-            "",
-            ...(Array.isArray(payload.failed)
-              ? payload.failed.map((f) => `${f.path} — ${f.reason}`)
-              : []),
-          ].join("\n");
-
-        const blob = new Blob([txt], { type: "text/plain" });
-        setTxtUrl(URL.createObjectURL(blob));
-        setInfoLine(`${payload.success}/${total} succeeded | ${failedNum} failed`);
-        setPhase("done");
-        push({ title: "Bulk upload finished", variant: "success" });
-      } catch {
-        handleError("Invalid server response");
-      }
-    };
-
-    xhr.onerror = () => handleError("Network error");
-
-    const form = new FormData();
-    form.append("archive", file);
-    xhr.send(form);
-  };
-
-  const handleError = (msg: string) => {
-    setErr(msg);
-    setPhase("error");
-    push({ title: "Bulk upload failed", description: msg, variant: "error" });
-  };
-
-  /* ---------- UI ---------- */
   return (
     <div
       className={cn(
@@ -169,7 +121,6 @@ export default function BulkUpload() {
             "bg-theme-100/40 dark:bg-theme-800/40 hover:bg-theme-100/60 dark:hover:bg-theme-800/60",
           )}
         >
-          <FiFile className="w-5 h-5 text-theme-600 dark:text-theme-400 shrink-0" />
           <span className="flex-1 truncate">
             {file ? file.name : "Choose archive…"}
           </span>
@@ -182,7 +133,9 @@ export default function BulkUpload() {
         </label>
 
         {/* progress / result / error */}
-        {phase === "uploading" && <ProgressBar progress={progress} />}
+        {phase === "uploading" && (
+          <ProgressBar progress={progress} />
+        )}
 
         {phase === "done" && txtUrl && (
           <InfoBox
@@ -222,13 +175,7 @@ export default function BulkUpload() {
               : "bg-theme-300 dark:bg-theme-700 cursor-not-allowed",
           )}
         >
-          {phase === "uploading" ? (
-            <span className="flex items-center gap-2 justify-center">
-              <FiLoader className="animate-spin" /> Uploading…
-            </span>
-          ) : (
-            "Start upload"
-          )}
+          {phase === "uploading" ? "Uploading…" : "Start upload"}
         </button>
       </form>
     </div>
@@ -269,13 +216,4 @@ function InfoBox({
       <div>{text}</div>
     </div>
   );
-}
-
-/* safe JSON helper */
-function safeJSON(str: string): any {
-  try {
-    return JSON.parse(str);
-  } catch {
-    return {};
-  }
 }

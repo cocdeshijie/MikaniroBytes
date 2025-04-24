@@ -12,10 +12,15 @@ import EditGroupDialog from "./EditGroupDialog";
 import ViewUsersDialog from "./ViewUsersDialog";
 import ViewGroupFilesDialog from "./ViewGroupFilesDialog";
 import type { GroupItem } from "@/types/sharedTypes";
-import { api, ApiError } from "@/lib/api";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import {
+  getGroups,
+  deleteGroup as apiDeleteGroup,
+} from "@/lib/admin";
 
-/* ---- jotai atoms per instance ---- */
+/* ------------------------------------------------------------------ */
+/*                         LOCAL ATOMS                                */
+/* ------------------------------------------------------------------ */
 function useLocalAtoms() {
   return {
     groupsAtom : useMemo(() => atom<GroupItem[]>([]), []),
@@ -27,15 +32,17 @@ function useLocalAtoms() {
 
 const IMMUTABLE = ["SUPER_ADMIN", "GUEST"];
 
+/* ================================================================== */
 export default function GroupsTab() {
   const { data: session } = useSession();
   const { groupsAtom, fetchedA, loadingA, errorA } = useLocalAtoms();
 
-  const [groups, setGroups] = useAtom(groupsAtom);
+  const [groups, setGroups]   = useAtom(groupsAtom);
   const [fetched, setFetched] = useAtom(fetchedA);
   const [loading, setLoading] = useAtom(loadingA);
   const [error, setError]     = useAtom(errorA);
 
+  /* ---------- first fetch ---------- */
   useEffect(() => {
     if (!session?.accessToken || fetched) return;
     void fetchGroups();
@@ -46,12 +53,9 @@ export default function GroupsTab() {
   async function fetchGroups() {
     setLoading(true); setError("");
     try {
-      const data = await api<GroupItem[]>("/admin/groups", {
-        token: session?.accessToken,
-      });
-      setGroups(data);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Failed to fetch groups");
+      setGroups(await getGroups(session?.accessToken));
+    } catch (e: any) {
+      setError(e.message || "Failed to fetch groups");
     } finally {
       setLoading(false);
     }
@@ -70,19 +74,18 @@ export default function GroupsTab() {
   async function deleteGroup(g: GroupItem, deleteFiles: boolean) {
     setLoading(true); setError("");
     try {
-      await api(
-        `/admin/groups/${g.id}?delete_files=${deleteFiles}`,
-        { method: "DELETE", token: session?.accessToken },
-      );
+      await apiDeleteGroup(g.id, deleteFiles, session?.accessToken);
       del(g.id);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Delete failed");
+    } catch (e: any) {
+      setError(e.message || "Delete failed");
     } finally {
       setLoading(false);
     }
   }
 
-  /* ------------------------------------------------------------ */
+  /* ------------------------------------------------------------------ */
+  /*                                UI                                  */
+  /* ------------------------------------------------------------------ */
   return (
     <div>
       <h3 className="text-lg font-medium mb-2">Groups Management</h3>
@@ -105,10 +108,12 @@ export default function GroupsTab() {
       </div>
 
       <Tooltip.Provider delayDuration={100}>
-        <div className={cn(
-          "p-4 bg-theme-100/25 dark:bg-theme-900/25 rounded-lg",
-          "border border-theme-200/50 dark:border-theme-800/50",
-        )}>
+        <div
+          className={cn(
+            "p-4 bg-theme-100/25 dark:bg-theme-900/25 rounded-lg",
+            "border border-theme-200/50 dark:border-theme-800/50",
+          )}
+        >
           {firstLoad && <SkeletonList />}
           {!firstLoad && groups.length === 0 && <p>No groups found.</p>}
 

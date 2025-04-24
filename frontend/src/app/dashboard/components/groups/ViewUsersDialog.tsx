@@ -11,20 +11,18 @@ import { useToast } from "@/lib/toast";
 import ViewUserFilesDialog from "../users/ViewUserFilesDialog";
 import MoveUserSelect from "../users/MoveUserSelect";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
-import { api, ApiError } from "@/lib/api";
+import {
+  getGroups,
+  getUsers,
+  updateUserGroup,
+  deleteUser as apiDeleteUser,
+  UserItem,
+} from "@/lib/admin";
 
-/* ---------- local types ---------- */
+/* ---------- local types for group prop ---------- */
 interface GroupInfo {
   id: number;
   name: string;
-  file_count: number;
-  storage_bytes: number;
-}
-interface UserItem {
-  id: number;
-  username: string;
-  email: string | null;
-  group: { id: number; name: string } | null;
   file_count: number;
   storage_bytes: number;
 }
@@ -41,7 +39,7 @@ export default function ViewUsersDialog({
 }) {
   const { push } = useToast();
 
-  /* ---- local atoms (scoped per-dialog) ---- */
+  /* ---- local atoms (scoped per dialog) ---- */
   const openA    = useMemo(() => atom(false), [group.id]);
   const loadingA = useMemo(() => atom(false), [group.id]);
   const errorA   = useMemo(() => atom(""), [group.id]);
@@ -62,23 +60,16 @@ export default function ViewUsersDialog({
   }, [open]);
 
   async function fetchAll() {
-    setLoading(true);
-    setError("");
+    setLoading(true); setError("");
     try {
-      const u = await api<UserItem[]>(
-        `/admin/users?group_id=${group.id}`,
-        { token: sessionToken },
-      );
-      setUsers(u);
-
-      const gRaw = await api<any[]>("/admin/groups", { token: sessionToken });
+      setUsers(await getUsers(sessionToken, group.id));
       setGroups(
-        gRaw
-          .filter((g) => !["SUPER_ADMIN", "GUEST"].includes(g.name))
-          .map(({ id, name }) => ({ id, name })),
+        (await getGroups(sessionToken)).filter(
+          (g) => !["SUPER_ADMIN", "GUEST"].includes(g.name),
+        ).map(({ id, name }) => ({ id, name })),
       );
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Load error");
+    } catch (e: any) {
+      setError(e.message || "Load error");
     } finally {
       setLoading(false);
     }
@@ -90,19 +81,14 @@ export default function ViewUsersDialog({
 
   async function moveUser(userId: number, newGroupId: number) {
     if (newGroupId === group.id) return;
-    setLoading(true);
-    setError("");
+    setLoading(true); setError("");
     try {
-      await api(
-        `/admin/users/${userId}/group`,
-        { method: "PUT", token: sessionToken, json: { group_id: newGroupId } },
-      );
+      await updateUserGroup(userId, newGroupId, sessionToken);
       setUsers((p) => p.filter((u) => u.id !== userId));
       push({ title: "User moved", variant: "success" });
       onChanged();
-    } catch (e) {
-      const msg = e instanceof ApiError ? e.message : "Move failed";
-      setError(msg);
+    } catch (e: any) {
+      setError(e.message || "Move failed");
       push({ title: "Move failed", variant: "error" });
     } finally {
       setLoading(false);
@@ -110,19 +96,14 @@ export default function ViewUsersDialog({
   }
 
   async function deleteUser(user: UserItem, deleteFiles: boolean) {
-    setLoading(true);
-    setError("");
+    setLoading(true); setError("");
     try {
-      await api(
-        `/admin/users/${user.id}?delete_files=${deleteFiles}`,
-        { method: "DELETE", token: sessionToken },
-      );
+      await apiDeleteUser(user.id, deleteFiles, sessionToken);
       setUsers((p) => p.filter((u) => u.id !== user.id));
       push({ title: "User deleted", variant: "success" });
       onChanged();
-    } catch (e) {
-      const msg = e instanceof ApiError ? e.message : "Delete failed";
-      setError(msg);
+    } catch (e: any) {
+      setError(e.message || "Delete failed");
       push({ title: "Delete failed", variant: "error" });
     } finally {
       setLoading(false);
@@ -210,7 +191,6 @@ export default function ViewUsersDialog({
                           onSelect={(gid) => moveUser(u.id, gid)}
                         />
 
-                        {/* shared confirm dialog for delete */}
                         <DeleteUserBtn user={u} onDelete={deleteUser} />
                       </div>
                     )}

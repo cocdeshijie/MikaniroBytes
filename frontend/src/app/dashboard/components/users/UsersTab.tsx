@@ -9,36 +9,35 @@ import { cn } from "@/utils/cn";
 import { ByteValueTooltip } from "../groups/ByteValueTooltip";
 import { useToast } from "@/lib/toast";
 import ViewUserFilesDialog from "./ViewUserFilesDialog";
-import { api, ApiError } from "@/lib/api";
 import MoveUserSelect from "./MoveUserSelect";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { Select, SelectOption } from "@/components/ui/Select";
+import {
+  getGroups,
+  getUsers,
+  updateUserGroup,
+  deleteUser as apiDeleteUser,
+  UserItem,
+} from "@/lib/admin";
 
-/* ---------- Types ---------- */
-interface GroupItem {
-  id: number;
-  name: string;
-}
-interface UserItem {
-  id: number;
-  username: string;
-  email?: string | null;
-  group: { id: number; name: string } | null;
-  file_count: number;
-  storage_bytes: number;
-}
-
-/* ---------- Local atoms ---------- */
+/* ------------------------------------------------------------------ */
+/*                             ATOMS                                  */
+/* ------------------------------------------------------------------ */
 const loadingAtom    = atom(false);
 const errorMsgAtom   = atom("");
 const usersAtom      = atom<UserItem[]>([]);
-const groupsAtom     = atom<GroupItem[]>([]);
+const groupsAtom     = atom<{ id: number; name: string }[]>([]);
 const hasFetchedAtom = atom(false);
 
-/* ---------- helpers ---------- */
+/* ------------------------------------------------------------------ */
+/*                           HELPERS                                  */
+/* ------------------------------------------------------------------ */
 const EXCLUDE = ["SUPER_ADMIN", "GUEST"];
 const isSuperAdmin = (u: UserItem) => u.group?.name === "SUPER_ADMIN";
 
+/* ================================================================== */
+/*                             COMPONENT                              */
+/* ================================================================== */
 export default function UsersTab() {
   const { data: session } = useSession();
   const { push }          = useToast();
@@ -60,22 +59,12 @@ export default function UsersTab() {
   async function fetchAll() {
     setLoading(true);  setError("");
     try {
-      const userData = await api<UserItem[]>("/admin/users", {
-        token: session?.accessToken,
-      });
-      setUsers(userData);
+      setUsers(await getUsers(session?.accessToken));
 
-      const groupData = await api<any[]>("/admin/groups", {
-        token: session?.accessToken,
-      });
-      setGroups(
-        groupData
-          .filter((g) => !EXCLUDE.includes(g.name))
-          .map(({ id, name }) => ({ id, name })),
-      );
-    } catch (e) {
-      const msg = e instanceof ApiError ? e.message : "Load error";
-      setError(msg);
+      const g = await getGroups(session?.accessToken);
+      setGroups(g.filter((x) => !EXCLUDE.includes(x.name)).map(({ id, name }) => ({ id, name })));
+    } catch (e: any) {
+      setError(e.message || "Load error");
     } finally {
       setLoading(false);
     }
@@ -85,15 +74,11 @@ export default function UsersTab() {
   async function handleGroupChange(userId: number, newGroupId: number) {
     setLoading(true); setError("");
     try {
-      const updated = await api<UserItem>(
-        `/admin/users/${userId}/group`,
-        { method: "PUT", token: session?.accessToken, json: { group_id: newGroupId } },
-      );
+      const updated = await updateUserGroup(userId, newGroupId, session?.accessToken);
       setUsers((p) => p.map((u) => (u.id === updated.id ? updated : u)));
       push({ title: "Group updated", variant: "success" });
-    } catch (e) {
-      const msg = e instanceof ApiError ? e.message : "Update failed";
-      setError(msg);
+    } catch (e: any) {
+      setError(e.message || "Update failed");
       push({ title: "Update failed", variant: "error" });
     } finally {
       setLoading(false);
@@ -103,15 +88,11 @@ export default function UsersTab() {
   async function deleteUser(user: UserItem, deleteFiles: boolean) {
     setLoading(true); setError("");
     try {
-      await api(
-        `/admin/users/${user.id}?delete_files=${deleteFiles}`,
-        { method: "DELETE", token: session?.accessToken },
-      );
+      await apiDeleteUser(user.id, deleteFiles, session?.accessToken);
       setUsers((p) => p.filter((u) => u.id !== user.id));
       push({ title: "User deleted", variant: "success" });
-    } catch (e) {
-      const msg = e instanceof ApiError ? e.message : "Delete failed";
-      setError(msg);
+    } catch (e: any) {
+      setError(e.message || "Delete failed");
       push({ title: "Delete failed", variant: "error" });
     } finally {
       setLoading(false);
@@ -126,10 +107,12 @@ export default function UsersTab() {
 
   /* ------------------------------------------------------------------ */
   return (
-    <div className={cn(
-      "p-4 bg-theme-100/25 dark:bg-theme-900/25 rounded-lg",
-      "border border-theme-200/50 dark:border-theme-800/50",
-    )}>
+    <div
+      className={cn(
+        "p-4 bg-theme-100/25 dark:bg-theme-900/25 rounded-lg",
+        "border border-theme-200/50 dark:border-theme-800/50",
+      )}
+    >
       <h3 className="text-lg font-medium mb-2">Users Management</h3>
 
       {errorMsg && (
@@ -149,7 +132,7 @@ export default function UsersTab() {
               "border-theme-200/50 dark:border-theme-800/50 bg-theme-50/20 dark:bg-theme-900/20",
             )}
           >
-            {/* ---- left ---- */}
+            {/* ---- left column ---- */}
             <div className="space-y-1 flex-1">
               <p className="font-medium">{u.username}</p>
               <p className="text-sm text-theme-600 dark:text-theme-400">
@@ -160,7 +143,7 @@ export default function UsersTab() {
               </p>
             </div>
 
-            {/* ---- right ---- */}
+            {/* ---- right controls ---- */}
             <div className="flex items-center gap-3">
               <ViewUserFilesDialog
                 userId={u.id}
@@ -199,7 +182,7 @@ export default function UsersTab() {
 }
 
 /* ------------------------------------------------------------------ */
-/*          per-row Delete button  — uses shared ConfirmDialog         */
+/*                per-row Delete button  (ConfirmDialog)              */
 /* ------------------------------------------------------------------ */
 function DeleteUserButton({
   user,
