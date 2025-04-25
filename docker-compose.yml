@@ -1,21 +1,33 @@
 version: '3.9'
 
 services:
+  db:
+    image: mysql:8
+    container_name: MikaniroBytes_db
+    environment:
+      - MYSQL_ROOT_PASSWORD=mikanirobytes
+      - MYSQL_DATABASE=mikanirobytes
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+
   backend:
     build: ./backend
     container_name: MikaniroBytes_backend
-    # Expose backend port 8000 on localhost:8000
+    depends_on:
+      - db
     ports:
       - "8000:8000"
-    # Mount the local uploads folder -> container's /app/uploads
-    volumes:
-      - ./uploads:/app/uploads
-    # Optional environment variables for the backend
+    # 1) Provide env vars so it uses MySQL
     environment:
-      # Example placeholder if your code needs them:
-      # - SQLALCHEMY_DATABASE_URL=sqlite:///./filebed.db
-    # Command is uvicorn by default if set in the Dockerfile;
-    # you can override here if you want:
+      - DB_ENGINE=mysql
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_USER=myuser
+      - DB_PASS=mypassword
+      - DB_NAME=mikanirobytes
+    # If needed, also pass any other environment variables
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
 
   frontend:
