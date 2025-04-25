@@ -15,18 +15,14 @@ import {
   uploadTasksAtom,
 } from "@/atoms/uploadAtoms";
 import { cn } from "@/utils/cn";
-import { useToast } from "@/providers/toast-provider";
+import { useToast } from "@/lib/toast";
 import { atom, useAtom } from "jotai";
 import { useMemo } from "react";
 import { iconFor } from "@/utils/fileIcons";
 import { formatBytes } from "@/utils/formatBytes";
 
-/* ------------------------------------------------------------------ */
-/*                          MAIN COMPONENT                            */
-/* ------------------------------------------------------------------ */
-
 export default function UploadItem({ taskId }: { taskId: string }) {
-  /* isolate single‑task state */
+  // find the relevant task in the global jotai store
   const taskAtom = useMemo(
     () => atom((get) => get(uploadTasksAtom).find((t) => t.id === taskId)!),
     [taskId],
@@ -35,12 +31,10 @@ export default function UploadItem({ taskId }: { taskId: string }) {
   const { push } = useToast();
   const [, setUploadedItems] = useAtom(uploadedItemsAtom);
 
-  const FileIcon = iconFor(task.file.name);
-  const niceSize = formatBytes(task.file.size);
+  if (!task) return null;
 
-  /* ------------------------------------------------------------------ */
-  /*                               RENDER                               */
-  /* ------------------------------------------------------------------ */
+  const FileIcon = iconFor(task.file.name);
+  const sizeLabel = formatBytes(task.file.size);
 
   return (
     <div
@@ -50,43 +44,36 @@ export default function UploadItem({ taskId }: { taskId: string }) {
         "bg-theme-50/30 dark:bg-theme-900/30",
       )}
     >
-      {/* ------------ COMMON HEADER (shows for all states) ------------- */}
+      {/* Header row */}
       <div className="flex items-start gap-3">
-        {/* file‑type icon */}
-        <FileIcon className="w-6 h-6 text-theme-700 dark:text-theme-300 shrink-0" />
+        {task.status === "uploading" ? (
+          <FiLoader className="w-5 h-5 animate-spin text-theme-500 mt-0.5" />
+        ) : task.status === "error" ? (
+          <FiX className="w-5 h-5 text-red-500 mt-0.5" />
+        ) : task.status === "done" ? (
+          <FiCheck className="w-5 h-5 text-green-600 mt-0.5" />
+        ) : (
+          /* pending or unknown => show icon */
+          <FileIcon className="w-5 h-5 text-theme-700 dark:text-theme-300" />
+        )}
 
-        {/* name + size */}
         <div className="flex-1">
           <p
             className={cn(
               "truncate font-medium text-sm",
-              "text-theme-800 dark:text-theme-200",
+              "text-theme-800 dark:text-theme-100"
             )}
             title={task.file.name}
           >
             {task.file.name}
           </p>
           <p className="text-xs text-theme-600 dark:text-theme-400">
-            {niceSize}
+            {sizeLabel}
           </p>
         </div>
-
-        {/* right status icon */}
-        {task.status === "uploading" && (
-          <FiLoader className="w-4 h-4 animate-spin text-theme-500 mt-0.5" />
-        )}
-        {task.status === "error" && (
-          <FiX
-            className="w-4 h-4 text-red-500 mt-0.5"
-            title={task.error}
-          />
-        )}
-        {task.status === "done" && (
-          <FiCheck className="w-4 h-4 text-green-600 mt-0.5" />
-        )}
       </div>
 
-      {/* ------------ BODY BY STATE ------------- */}
+      {/* Body by status */}
       {task.status === "uploading" && (
         <Progress.Root
           value={task.progress}
@@ -130,7 +117,7 @@ export default function UploadItem({ taskId }: { taskId: string }) {
 }
 
 /* ------------------------------------------------------------------ */
-/*                       SMALL REUSABLE LINE                          */
+/*  small subcomponent for link lines                                 */
 /* ------------------------------------------------------------------ */
 function LinkLine({
   icon,
@@ -147,7 +134,7 @@ function LinkLine({
     <div
       className={cn(
         "flex items-center gap-2 text-xs rounded px-2 py-1",
-        "bg-theme-100/40 dark:bg-theme-800/40",
+        "bg-theme-100/40 dark:bg-theme-800/40"
       )}
     >
       {icon}
@@ -158,7 +145,7 @@ function LinkLine({
             await navigator.clipboard.writeText(copy);
             onSuccess();
           } catch {
-            /* ignore */
+            /* no-op */
           }
         }}
         className="p-1 rounded hover:bg-theme-200/60 dark:hover:bg-theme-700/60 transition"

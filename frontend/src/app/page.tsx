@@ -24,7 +24,6 @@ import { uploadFile } from "@/lib/files";
 /* ------------------------------------------------------------------ */
 /*                       local derived atoms                          */
 /* ------------------------------------------------------------------ */
-
 const pendingCountAtom = atom((get) =>
   get(uploadTasksAtom).filter((t) => t.status === "pending").length
 );
@@ -38,7 +37,6 @@ const parseUploadError = (raw: string | null): string =>
 /* ------------------------------------------------------------------ */
 /*                             COMPONENT                              */
 /* ------------------------------------------------------------------ */
-
 export default function Home() {
   const { data: session } = useSession();
   const { push } = useToast();
@@ -113,9 +111,7 @@ export default function Home() {
    * ------------------------------------------------------------------ */
   const handleUpload = (e: FormEvent) => {
     e.preventDefault();
-    tasks
-      .filter((t) => t.status === "pending")
-      .forEach(startUpload);
+    tasks.filter((t) => t.status === "pending").forEach(startUpload);
   };
 
   const startUpload = (task: UploadTask) => {
@@ -135,6 +131,7 @@ export default function Home() {
         ),
     })
       .then((result) => {
+        // success
         setTasks((prev) =>
           prev.map((t) =>
             t.id === task.id
@@ -146,6 +143,7 @@ export default function Home() {
         setNeedsRefresh(true);
       })
       .catch((e) => {
+        // failure => mark error, show toast
         const msg = parseUploadError(e?.message ?? null);
         setTasks((prev) =>
           prev.map((t) =>
@@ -155,10 +153,10 @@ export default function Home() {
         push({ title: "Upload failed", description: msg, variant: "error" });
       });
   };
+
   /* ------------------------------------------------------------------
    *  JSX
    * ------------------------------------------------------------------ */
-
   return (
     <div className="relative bg-theme-50 dark:bg-theme-950">
       {/* Hero + Upload section – guaranteed ≥ viewport height */}
