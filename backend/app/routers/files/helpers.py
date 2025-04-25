@@ -94,3 +94,78 @@ def store_new_file(
     # e.g. queue_video_encoding(db_file), or something similar.
 
     return db_file
+
+
+def store_file_from_archive(
+    db: Session,
+    file_contents: bytes,
+    archive_path: str,
+    owner_id: Optional[int],
+) -> FileModel:
+    """
+    Bulk-specific function that preserves the ZIP/TAR subpath.
+    E.g. if 'archive_path' = 'assets/img/logo.png',
+    it creates 'uploads/assets/img/logo.png'.
+
+    We'll do minimal collision logic (by default overwrite).
+    If you want collisions to be handled differently, you can
+    rename or skip, etc. as you see fit.
+    """
+    if not file_contents:
+        raise ValueError("Empty file")
+
+    # Make sure archive_path doesn't start with / or ..
+    # for security reasons
+    safe_path = _sanitize_archive_path(archive_path)
+    if not safe_path:
+        raise ValueError(f"Invalid archive path: {archive_path}")
+
+    final_abs_path = os.path.join(UPLOAD_DIR, safe_path)
+    final_dir = os.path.dirname(final_abs_path)
+    os.makedirs(final_dir, exist_ok=True)
+
+    # Overwrite if file already exists
+    with open(final_abs_path, "wb") as out:
+        out.write(file_contents)
+
+    # Store a DB row
+    db_file = FileModel(
+        size=len(file_contents),
+        file_type=FileType.BASE,
+        storage_type=StorageType.LOCAL,
+        storage_data={"path": safe_path},  # e.g. "assets/img/logo.png"
+        content_type="application/octet-stream",
+        user_id=owner_id,
+        original_filename=os.path.basename(archive_path),
+    )
+    db.add(db_file)
+    db.commit()
+    db.refresh(db_file)
+
+    return db_file
+
+
+def _sanitize_archive_path(path_in_archive: str) -> str:
+    """
+    Remove any leading slashes or '..' segments,
+    so we don't break out of the 'uploads' folder.
+
+    e.g.
+      "assets/img/logo.png" -> "assets/img/logo.png"
+      "/etc/passwd" -> "etc/passwd"
+      "../secret.txt" -> "secret.txt"
+    """
+    # Remove any leading slashes/backslashes:
+    p = path_in_archive.lstrip("/\\")
+    # Replace backslashes with forward slashes (if on Windows or if the archive had them)
+    p = p.replace("\\", "/")
+
+    # Split path segments and remove '.' or '..'
+    parts = []
+    for seg in p.split("/"):
+        if seg in (".", "..", ""):
+            continue
+        parts.append(seg)
+    # Reassemble
+    sanitized = "/".join(parts)
+    return sanitized
