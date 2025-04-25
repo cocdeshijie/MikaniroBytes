@@ -9,7 +9,7 @@ import { ScrollProvider } from "@/providers/scroll-provider";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { NextAuthProvider } from "@/providers/next-auth-provider";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/auth-options";
 import { ToastProvider } from "@/providers/toast-provider";
 
 /* ------------------------------------------------------------------ */
