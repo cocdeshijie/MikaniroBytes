@@ -17,7 +17,7 @@ import { api } from "@/lib/api";
 const logoHoverAtom  = atom(false);
 const scrollAtom     = atom(false);
 const dialogOpenAtom = atom(false);
-const regEnabledAtom = atom<null | boolean>(null); // ← null = loading
+const regEnabledAtom = atom<null | boolean>(null);
 
 /* ------------------------------------------------------------------ */
 /*  helper – decide if a link is active                               */
@@ -68,7 +68,7 @@ const Logo = () => {
                 "text-[10px] font-normal text-theme-500 dark:text-white whitespace-nowrap"
               )}
             >
-              Securely store and share your files
+              Upload and share anything!
             </div>
           )}
         </div>

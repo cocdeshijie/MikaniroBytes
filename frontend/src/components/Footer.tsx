@@ -6,7 +6,7 @@ export default function Footer() {
                  border-t border-theme-200 dark:border-theme-800"
     >
       <p>
-        Made with <span className="text-red-500">&hearts;</span> by You
+        &copy; {new Date().getFullYear()} <a href={"https://qwq.xyz"}>cocdeshijie</a>
       </p>
     </footer>
   );
