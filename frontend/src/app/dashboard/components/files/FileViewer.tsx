@@ -248,7 +248,7 @@ export default function FileViewer({
         onClick={handleClick}
         onContextMenu={handleCtx}
         className={cn(
-          "h-32 w-full relative flex flex-col items-center justify-center gap-2 p-4",
+          "h-32 w-full relative flex flex-col items-center justify-center gap-2 p-2",
           "rounded-lg cursor-pointer select-none outline-none",
           "border border-theme-200/50 dark:border-theme-800/50",
           "bg-theme-100/25 dark:bg-theme-900/25 hover:bg-theme-100/50 dark:hover:bg-theme-900/40",
@@ -258,20 +258,23 @@ export default function FileViewer({
       >
         {(() => {
           if (isDownloading) {
-            return <FiLoader className="w-6 h-6 animate-spin text-theme-700 dark:text-theme-300" />;
+            // bigger spinner
+            return (
+              <FiLoader className="w-16 h-16 animate-spin text-theme-700 dark:text-theme-300" />
+            );
           }
           if (file.has_preview && file.preview_url) {
-            // show <img> if has_preview
+            // bigger image
             return (
               <img
                 src={absolute(file.preview_url)}
                 alt="Preview"
-                className="h-12 w-12 object-cover rounded-md"
+                className="h-16 w-16 object-cover rounded-md"
               />
             );
           }
-          // fallback icon
-          return <Icon className="w-6 h-6 text-theme-700 dark:text-theme-300" />;
+          // bigger fallback icon
+          return <Icon className="w-16 h-16 text-theme-700 dark:text-theme-300" />;
         })()}
 
         <p className="text-xs text-center leading-tight break-all line-clamp-2 max-h-8 overflow-hidden">
