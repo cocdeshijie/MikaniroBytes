@@ -47,6 +47,8 @@ services:
     ports:
       - "3000:3000"
     environment:
+      - NEXTAUTH_URL=http://localhost:3000
+      - NEXTAUTH_SECRET=SUPER_SECRET_VALUE
       - NEXT_PUBLIC_BACKEND_URL=http://backend:8000
     command: npm run start
 
