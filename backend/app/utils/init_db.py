@@ -24,7 +24,7 @@ def init_db(db: Session) -> None:
     if not super_admin_group:
         super_admin_group = Group(name="SUPER_ADMIN")
         super_admin_group.settings = GroupSettings(
-            allowed_extensions=["jpg", "png", "gif", "zip", "pdf"],
+            allowed_extensions=[],
             max_file_size=None,
             max_storage_size=None,
         )
@@ -55,9 +55,9 @@ def init_db(db: Session) -> None:
     if not guest_group:
         guest_group = Group(name="GUEST")
         guest_group.settings = GroupSettings(
-            allowed_extensions=["jpg", "png", "gif"],
-            max_file_size=5_000_000,       # 5 MB per file
-            max_storage_size=1_000_000_000 # 1 GB total
+            allowed_extensions=["jpg", "png", "gif", "pdf"],
+            max_file_size=5 * 1024 * 1024,           # 5 MB in binary
+            max_storage_size=10 * 1024 * 1024 * 1024  # 10 GB in binary
         )
         db.add(guest_group)
         db.commit()
@@ -89,9 +89,9 @@ def init_db(db: Session) -> None:
         # None exist – create fallback USERS group
         normal_group = Group(name="USERS")
         normal_group.settings = GroupSettings(
-            allowed_extensions=["jpg", "png", "gif"],
-            max_file_size=10_000_000,       # 10 MB
-            max_storage_size=500_000_000,   # 500 MB total
+            allowed_extensions=[],
+            max_file_size=10 * 1024 * 1024,       # 10 MB in binary
+            max_storage_size=1 * 1024 * 1024 * 1024,   # 1 GB in binary
         )
         db.add(normal_group)
         db.commit()
