@@ -8,18 +8,7 @@ import { cn } from "@/utils/cn";
 import { useToast } from "@/providers/toast-provider";
 import type { GroupItem } from "@/types/sharedTypes";
 import { api, ApiError } from "@/lib/api";
-
-/* ---------- helpers ---------- */
-function sizeToBytes(input: string): number | null {
-  const txt = input.trim().toLowerCase();
-  if (!txt) return null;
-  const m = txt.match(/^([\d.,]+)\s*(b|kb|mb|gb|tb)?$/);
-  if (!m) return null;
-  const num = parseFloat(m[1].replace(",", "."));
-  if (isNaN(num)) return null;
-  const mult: Record<string, number> = { b:1, kb:1e3, mb:1e6, gb:1e9, tb:1e12 };
-  return Math.round(num * mult[m[2] ?? "b"]);
-}
+import { sizeToBytes } from "@/utils/formatBytes";
 
 const inputCls = () =>
   cn(
@@ -28,10 +17,9 @@ const inputCls = () =>
     "border border-theme-200 dark:border-theme-700",
     "focus:border-theme-500 focus:outline-none",
     "transition-colors duration-200",
-    "text-theme-900 dark:text-theme-100",
+    "text-theme-900 dark:text-theme-100"
   );
 
-/* =================================================================== */
 export default function AddGroupDialog({
   sessionToken,
   onCreated,
@@ -57,7 +45,6 @@ export default function AddGroupDialog({
   const [err, setErr]       = useAtom(errA);
   const [loading, setLoad]  = useAtom(loadA);
 
-  /* ------------------------------------------------------------------ */
   async function create() {
     setErr("");
     setLoad(true);
@@ -72,7 +59,7 @@ export default function AddGroupDialog({
       const payload = {
         name: name.trim(),
         allowed_extensions: exts,
-        max_file_size: sizeToBytes(maxF),
+        max_file_size: sizeToBytes(maxF),    // parse "10mb" → e.g. 10485760
         max_storage_size: sizeToBytes(maxS),
       };
 
@@ -87,7 +74,7 @@ export default function AddGroupDialog({
       setName(""); setAllow(""); setMaxF("10mb"); setMaxS("");
       setOpen(false);
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : "Create failed";
+      const msg = e instanceof ApiError ? e.message : (e as Error).message;
       setErr(msg);
       push({ title: msg, variant: "error" });
     } finally {
@@ -95,7 +82,6 @@ export default function AddGroupDialog({
     }
   }
 
-  /* ------------------------------------------------------------------ */
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Trigger asChild>
@@ -109,7 +95,7 @@ export default function AddGroupDialog({
         <Dialog.Content
           className={cn(
             "fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2",
-            "bg-theme-50 dark:bg-theme-900 rounded-lg shadow-lg max-w-sm w-full p-6",
+            "bg-theme-50 dark:bg-theme-900 rounded-lg shadow-lg max-w-sm w-full p-6"
           )}
         >
           <Dialog.Title className="text-lg font-medium mb-2">
@@ -118,6 +104,8 @@ export default function AddGroupDialog({
 
           <Dialog.Description className="text-sm text-theme-600 dark:text-theme-400 mb-4">
             Use “1 KB”, “10 MB”, “1 GB” etc. — leave blank for unlimited.
+            <br />
+            (Binary-based: 1 MB = 1,048,576 bytes)
           </Dialog.Description>
 
           {err && (
@@ -126,41 +114,54 @@ export default function AddGroupDialog({
             </p>
           )}
 
-          <Form.Root onSubmit={(e)=>{e.preventDefault(); void create();}} className="space-y-5">
-            {/* name */}
+          <Form.Root
+            onSubmit={(e) => {
+              e.preventDefault();
+              void create();
+            }}
+            className="space-y-5"
+          >
             <Form.Field name="name">
-              <Form.Label className="block mb-1 text-sm font-medium">Group Name</Form.Label>
+              <Form.Label className="block mb-1 text-sm font-medium">
+                Group Name
+              </Form.Label>
               <Form.Control asChild>
-                <input required value={name} onChange={(e)=>setName(e.target.value)} className={inputCls()} />
+                <input
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className={inputCls()}
+                />
               </Form.Control>
             </Form.Field>
 
-            {/* allowed extensions */}
             <Form.Field name="allowed">
               <Form.Label className="block mb-1 text-sm font-medium">
                 Allowed Extensions (comma-sep)
               </Form.Label>
               <Form.Control asChild>
-                <input value={allow} onChange={(e)=>setAllow(e.target.value)} className={inputCls()} />
+                <input
+                  value={allow}
+                  onChange={(e) => setAllow(e.target.value)}
+                  className={inputCls()}
+                />
               </Form.Control>
               <p className="mt-1 text-xs text-theme-500 dark:text-theme-400">
                 Leave blank to allow any file type.
               </p>
             </Form.Field>
 
-            {/* limits */}
             <SizeInput
               label="Max File Size"
               value={maxF}
-              onChange={(e)=>setMaxF(e.target.value)}
+              onChange={(e) => setMaxF(e.target.value)}
             />
             <SizeInput
               label="Max Total Storage"
               value={maxS}
-              onChange={(e)=>setMaxS(e.target.value)}
+              onChange={(e) => setMaxS(e.target.value)}
             />
 
-            {/* actions */}
             <div className="flex justify-end gap-2 pt-2">
               <Dialog.Close asChild>
                 <button className="px-4 py-2 rounded border border-theme-300 dark:border-theme-700">
@@ -183,8 +184,11 @@ export default function AddGroupDialog({
   );
 }
 
+/* ------------------------------------------------------------------
+   Reusable size input
+------------------------------------------------------------------ */
 function SizeInput(
-  props: React.InputHTMLAttributes<HTMLInputElement> & { label: string },
+  props: React.InputHTMLAttributes<HTMLInputElement> & { label: string }
 ) {
   const { label, ...rest } = props;
   return (
