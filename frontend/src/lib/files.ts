@@ -1,4 +1,4 @@
-import { BACKEND_URL } from "@/lib/env";
+import { NEXT_PUBLIC_BACKEND_URL } from "@/lib/env";
 
 /**
  * Custom error for non‑2xx responses.
@@ -78,7 +78,7 @@ export function uploadFile(
   file: File,
   opts: UploadOptions = {}
 ): Promise<UploadedItem> {
-  const url = `${BACKEND_URL}/files/upload`;
+  const url = `${NEXT_PUBLIC_BACKEND_URL}/files/upload`;
   const xhr = mkXHR(url, opts.token, opts.onProgress);
 
   return new Promise<UploadedItem>((resolve, reject) => {
@@ -120,7 +120,7 @@ export function bulkUpload(
   archive: File,
   opts: UploadOptions = {}
 ): Promise<BulkUploadResponse> {
-  const url = `${BACKEND_URL}/files/bulk-upload`;
+  const url = `${NEXT_PUBLIC_BACKEND_URL}/files/bulk-upload`;
   const xhr = mkXHR(url, opts.token, opts.onProgress);
 
   return new Promise<BulkUploadResponse>((resolve, reject) => {
@@ -150,7 +150,7 @@ export function bulkUpload(
    /files/batch-delete
 ------------------------------------------------------------------ */
 export async function batchDelete(ids: number[], token?: string): Promise<void> {
-  const url = `${BACKEND_URL}/files/batch-delete`;
+  const url = `${NEXT_PUBLIC_BACKEND_URL}/files/batch-delete`;
   const res = await fetch(url, {
     method: "DELETE",
     headers: {
@@ -180,7 +180,7 @@ export async function batchDownload(
   ids: number[],
   token?: string
 ): Promise<Blob> {
-  const url = `${BACKEND_URL}/files/batch-download`;
+  const url = `${NEXT_PUBLIC_BACKEND_URL}/files/batch-download`;
   const res = await fetch(url, {
     method: "POST",
     headers: {

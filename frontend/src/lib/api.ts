@@ -1,4 +1,4 @@
-import { BACKEND_URL } from "./env";
+import { NEXT_PUBLIC_BACKEND_URL } from "./env";
 
 /** Custom error thrown on any non-2xx response */
 export class ApiError extends Error {
@@ -28,7 +28,7 @@ export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Pro
 
   const url = /^https?:\/\//.test(path)           // already absolute?
     ? path
-    : `${BACKEND_URL}${path.startsWith("/") ? "" : "/"}${path}`;
+    : `${NEXT_PUBLIC_BACKEND_URL}${path.startsWith("/") ? "" : "/"}${path}`;
 
   const headers: HeadersInit = {
     ...(json  ? { "Content-Type": "application/json" } : {}),
