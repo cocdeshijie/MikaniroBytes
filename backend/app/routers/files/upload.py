@@ -13,9 +13,18 @@ from app.db.database import get_db
 from app.db.models.user import User
 from app.db.models.system_settings import SystemSettings
 from app.db.models.storage_enums import FileType
-from app.dependencies.auth import get_current_user, get_optional_user
+from app.db.models.group_settings import GroupSettings
+from app.db.models.user import User as UserModel
 
-from .helpers import store_new_file, store_file_from_archive, guess_file_type_by_extension
+from app.dependencies.auth import get_current_user, get_optional_user
+from app.routers.files.helpers import (
+    store_new_file,
+    store_file_from_archive,
+    guess_file_type_by_extension,
+    validate_upload,                 # ★ NEW
+    ExceedsSizeLimitError,          # ★ NEW
+    ExtensionNotAllowedError,       # ★ NEW
+)
 from app.utils.preview import generate_preview_in_background, PREVIEW_GENERATORS
 
 UPLOAD_DIR = "uploads"
@@ -29,6 +38,9 @@ class BulkUploadSummary(BaseModel):
     result_text: str
 
 
+# ─────────────────────────────────────────────────────────────────────
+#  Single-file upload
+# ─────────────────────────────────────────────────────────────────────
 @router.post("/upload")
 def upload_file(
     request: Request,
@@ -39,6 +51,7 @@ def upload_file(
 ):
     """
     Single file upload, plus optional preview generation for images.
+    Enforces group-specific size limit & allowed_extensions.
     """
     settings = db.query(SystemSettings).first()
 
@@ -54,28 +67,43 @@ def upload_file(
     if not contents:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
-    # Determine owner
+    # Determine owner + group
     if current_user:
-        owner_id = current_user.id
+        owner_user = current_user
     else:
-        guest_user = db.query(User).filter(User.username == "guest").first()
-        owner_id = guest_user.id if guest_user else None
+        guest_user = db.query(UserModel).filter_by(username="guest").first()
+        owner_user = guest_user
+
+    # ★ Enforce group constraints
+    group_settings = owner_user.group.settings if owner_user.group else None
+    try:
+        validate_upload(
+            file_data=contents,
+            filename=file.filename,
+            group_settings=group_settings,
+        )
+    except ExceedsSizeLimitError as e:
+        # 413 = Payload Too Large
+        raise HTTPException(status_code=413, detail=str(e))
+    except ExtensionNotAllowedError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     # Create the file row
     db_file = store_new_file(
         db=db,
         file_contents=contents,
         original_filename=file.filename,
-        owner_id=owner_id,
+        owner_id=owner_user.id,
         settings=settings,
     )
 
+    # guess file type
     ftype = guess_file_type_by_extension(db_file.original_filename or "")
     db_file.file_type = ftype
     db.add(db_file)
     db.commit()
 
-    # If it's recognized as an image, set file_type and schedule preview
+    # If recognized as an image => queue preview
     if ftype in PREVIEW_GENERATORS:
         if background_tasks is None:
             raise HTTPException(status_code=500, detail="BackgroundTasks not available")
@@ -91,6 +119,9 @@ def upload_file(
     }
 
 
+# ─────────────────────────────────────────────────────────────────────
+#  Bulk upload
+# ─────────────────────────────────────────────────────────────────────
 @router.post("/bulk-upload", response_model=BulkUploadSummary)
 async def bulk_upload(
     background_tasks: BackgroundTasks,
@@ -100,10 +131,15 @@ async def bulk_upload(
 ):
     """
     .zip/.tar(.gz) extraction.
-    We preserve the subfolder structure exactly as it appears.
+    We preserve subfolder structure exactly as found in the archive.
     If recognized as an image => queue a preview.
+
+    Now enforces group constraints for each extracted file:
+      - If file is too large => skip
+      - If extension not allowed => skip
     """
     settings = db.query(SystemSettings).first()
+    user_group_settings = current_user.group.settings if current_user.group else None
 
     name_lower = (archive.filename or "").lower()
     if not (
@@ -127,27 +163,37 @@ async def bulk_upload(
     def _import_file(member_name: str, file_reader: io.BufferedReader):
         nonlocal ok_count, fail_count
 
-        # If member_name ends with "/" or something, skip
         if not member_name or member_name.endswith("/"):
             return
         file_data = file_reader.read()
         if not file_data:
             return
 
+        # ★ Validate extension & size
         try:
-            # store the file exactly as in the archive
+            validate_upload(
+                file_data=file_data,
+                filename=member_name,  # the "filename" inside the archive
+                group_settings=user_group_settings,
+            )
+        except (ExceedsSizeLimitError, ExtensionNotAllowedError) as exc:
+            fail_count += 1
+            summary_lines.append(f"{member_name}\t{exc}")
+            return
+
+        try:
             new_file = store_file_from_archive(
                 db=db,
                 file_contents=file_data,
                 archive_path=member_name,
-                owner_id=current_user.id
+                owner_id=current_user.id,
             )
             # guess file type
             ftype = guess_file_type_by_extension(new_file.original_filename or "")
             new_file.file_type = ftype
             db.add(new_file)
             db.commit()
-            # If recognized as image => mark as IMAGE + queue preview
+            # If recognized as image => queue preview
             if ftype in PREVIEW_GENERATORS:
                 background_tasks.add_task(generate_preview_in_background, new_file.id)
 
@@ -190,3 +236,4 @@ async def bulk_upload(
         failed=fail_count,
         result_text=report_text,
     )
+

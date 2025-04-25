@@ -1,7 +1,7 @@
-import hashlib
 import os
-import secrets
+import hashlib
 import time
+import secrets
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -10,13 +10,62 @@ from sqlalchemy.orm import Session
 
 from app.db.models.file import File as FileModel
 from app.db.models.storage_enums import FileType, StorageType
-from app.db.models.user import User
+from app.db.models.group_settings import GroupSettings
 from app.db.models.system_settings import SystemSettings
 
 
 UPLOAD_DIR = "uploads"
 
 
+# ─────────────────────────────────────────────────────────────────────
+#  Custom exceptions for file validation
+# ─────────────────────────────────────────────────────────────────────
+class ExceedsSizeLimitError(Exception):
+    """Raised when the file's size exceeds max_file_size."""
+    pass
+
+
+class ExtensionNotAllowedError(Exception):
+    """Raised when the file's extension is not in allowed_extensions."""
+    pass
+
+
+# ─────────────────────────────────────────────────────────────────────
+#  Validate single-file constraints (extension + size)
+# ─────────────────────────────────────────────────────────────────────
+def validate_upload(file_data: bytes, filename: str, group_settings: GroupSettings):
+    """
+    • If group_settings.max_file_size is not None,
+      raise ExceedsSizeLimitError if file is bigger.
+    • If group_settings.allowed_extensions is non-empty,
+      enforce extension membership (case-insensitive).
+    """
+    if not group_settings:
+        return  # no constraints if settings is missing
+
+    # 1) Enforce max_file_size
+    if group_settings.max_file_size is not None:
+        if len(file_data) > group_settings.max_file_size:
+            raise ExceedsSizeLimitError(
+                f"File size {len(file_data)} bytes exceeds limit {group_settings.max_file_size}."
+            )
+
+    # 2) Enforce allowed_extensions
+    exts = group_settings.allowed_extensions or []
+    if exts:  # not empty => must match
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        # Example: exts = ["jpg","png"]
+        # We do a case-insensitive check
+        allowed_lower = [x.lower() for x in exts]
+        if ext not in allowed_lower:
+            raise ExtensionNotAllowedError(
+                f"File extension '.{ext}' is not allowed. Allowed list: {', '.join(exts)}"
+            )
+
+
+# ─────────────────────────────────────────────────────────────────────
+#  Very naive extension-based detection
+# ─────────────────────────────────────────────────────────────────────
 def guess_file_type_by_extension(filename: str) -> FileType:
     """
     Very naive extension-based detection.
@@ -29,6 +78,9 @@ def guess_file_type_by_extension(filename: str) -> FileType:
     return FileType.BASE
 
 
+# ─────────────────────────────────────────────────────────────────────
+#  Render {Y}/{m}/{d}, etc.
+# ─────────────────────────────────────────────────────────────────────
 def render_path_template(template: str, now: datetime) -> str:
     """
     Render {Y}, {m}, {d}, {H}, {M}, {S} tokens in *template* using *now*.
@@ -48,6 +100,9 @@ def render_path_template(template: str, now: datetime) -> str:
         return ""
 
 
+# ─────────────────────────────────────────────────────────────────────
+#  store_new_file
+# ─────────────────────────────────────────────────────────────────────
 def store_new_file(
     db: Session,
     file_contents: bytes,
@@ -57,9 +112,9 @@ def store_new_file(
 ) -> FileModel:
     """
     Core helper that:
-      1) Determines a hashed name + subdirectory from *settings*.
-      2) Saves *file_contents* on disk under /uploads/<subdir>.
-      3) Creates a DB row in files table.
+      1) Picks a subdirectory from *settings* (upload_path_template).
+      2) Saves the file to disk in /uploads/<subdir>.
+      3) Creates a DB row.
       4) Returns the new FileModel.
 
     If *owner_id* is None, the file has no assigned user (or guest user).
@@ -84,11 +139,11 @@ def store_new_file(
     rel_file_path = os.path.join(rel_dir, hashed_name) if rel_dir else hashed_name
     abs_file_path = os.path.join(target_dir, hashed_name)
 
-    # Write the file to disk
+    # Write to disk
     with open(abs_file_path, "wb") as out:
         out.write(file_contents)
 
-    # Create a DB row
+    # Create DB row
     db_file = FileModel(
         size=len(file_contents),
         file_type=FileType.BASE,
@@ -102,12 +157,12 @@ def store_new_file(
     db.commit()
     db.refresh(db_file)
 
-    # If you want background tasks or post-processing, you can trigger them here:
-    # e.g. queue_video_encoding(db_file), or something similar.
-
     return db_file
 
 
+# ─────────────────────────────────────────────────────────────────────
+#  store_file_from_archive
+# ─────────────────────────────────────────────────────────────────────
 def store_file_from_archive(
     db: Session,
     file_contents: bytes,
@@ -116,12 +171,9 @@ def store_file_from_archive(
 ) -> FileModel:
     """
     Bulk-specific function that preserves the ZIP/TAR subpath.
-    E.g. if 'archive_path' = 'assets/img/logo.png',
-    it creates 'uploads/assets/img/logo.png'.
-
-    We'll do minimal collision logic (by default overwrite).
-    If you want collisions to be handled differently, you can
-    rename or skip, etc. as you see fit.
+    e.g. "assets/img/logo.png" => it writes /uploads/assets/img/logo.png
+    Overwrites if file already exists.
+    Creates a DB row & returns it.
     """
     if not file_contents:
         raise ValueError("Empty file")
@@ -145,7 +197,7 @@ def store_file_from_archive(
         size=len(file_contents),
         file_type=FileType.BASE,
         storage_type=StorageType.LOCAL,
-        storage_data={"path": safe_path},  # e.g. "assets/img/logo.png"
+        storage_data={"path": safe_path},
         content_type="application/octet-stream",
         user_id=owner_id,
         original_filename=os.path.basename(archive_path),
@@ -157,6 +209,9 @@ def store_file_from_archive(
     return db_file
 
 
+# ─────────────────────────────────────────────────────────────────────
+#  sanitize path
+# ─────────────────────────────────────────────────────────────────────
 def _sanitize_archive_path(path_in_archive: str) -> str:
     """
     Remove any leading slashes or '..' segments,
@@ -178,6 +233,4 @@ def _sanitize_archive_path(path_in_archive: str) -> str:
         if seg in (".", "..", ""):
             continue
         parts.append(seg)
-    # Reassemble
-    sanitized = "/".join(parts)
-    return sanitized
+    return "/".join(parts)
