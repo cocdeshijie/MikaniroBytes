@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { atom, useAtom } from "jotai";
 import * as Checkbox from "@radix-ui/react-checkbox";
-import { BiCheck } from "react-icons/bi";
+import { BiCheck, BiLoader } from "react-icons/bi";
 import { cn } from "@/utils/cn";
 import { useToast } from "@/lib/toast";
 import { api, ApiError } from "@/lib/api";
@@ -20,11 +20,11 @@ interface SystemSettingsData {
 }
 
 /* ---------- ATOMS ---------- */
-const loadingA = atom(false);
-const fetchedA = atom(false);
-const errorA   = atom("");
-const groupsA  = atom<GroupItem[]>([]);
-const configA  = atom<SystemSettingsData>({
+const loadingA    = atom(false);      // true while network in‑flight (cold load OR save)
+const refreshingA = atom(false);      // true during background cache refresh
+const errorA      = atom("");
+const groupsA     = atom<GroupItem[]>([]);
+const configA     = atom<SystemSettingsData>({
   registration_enabled  : true,
   public_upload_enabled : false,
   default_user_group_id : null,
@@ -36,55 +36,65 @@ export default function ConfigsTab() {
   const { data: session } = useSession();
   const { push }          = useToast();
 
-  const [loading, setLoading] = useAtom(loadingA);
-  const [fetched, setFetched] = useAtom(fetchedA);
-  const [errorMsg, setError]  = useAtom(errorA);
-  const [groups, setGroups]   = useAtom(groupsA);
-  const [config, setConfig]   = useAtom(configA);
+  const [loading, setLoading]     = useAtom(loadingA);
+  const [refreshing, setRefresh]  = useAtom(refreshingA);
+  const [errorMsg, setError]      = useAtom(errorA);
+  const [groups, setGroups]       = useAtom(groupsA);
+  const [config, setConfig]       = useAtom(configA);
 
-  /* ---------- initial fetch ---------- */
+  const firstLoadRef = useRef(true);
+
+  /* ---------- fetch whenever page mounts OR user token changes ------ */
   useEffect(() => {
-    if (!session?.accessToken || fetched) return;
+    if (!session?.accessToken) return;
     void fetchAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.accessToken, fetched]);
+  }, [session?.accessToken]);
 
   async function fetchAll() {
-    setLoading(true); setError("");
+    if (firstLoadRef.current && groups.length === 0) {
+      setLoading(true);
+    } else {
+      setRefresh(true);
+    }
+    setError("");
     try {
-      const settings = await api<SystemSettingsData>(
-        "/admin/system-settings",
-        { token: session?.accessToken },
-      );
+      const [settings, raw] = await Promise.all([
+        api<SystemSettingsData>("/admin/system-settings", { token: session?.accessToken }),
+        api<any[]>("/admin/groups", { token: session?.accessToken }),
+      ]);
+
       setConfig(settings);
 
-      const raw = await api<any[]>("/admin/groups", { token: session?.accessToken });
       const normal = raw
         .filter((g) => !["SUPER_ADMIN", "GUEST"].includes(g.name))
         .map(({ id, name }) => ({ id, name }));
       setGroups(normal);
-
-      /* ensure default id valid */
-      if (
-        normal.length &&
-        !normal.some((g) => g.id === settings.default_user_group_id)
-      ) {
-        setConfig((p) => ({ ...p, default_user_group_id: normal[0].id }));
-      }
-
-      setFetched(true);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Load error");
     } finally {
       setLoading(false);
+      setRefresh(false);
+      firstLoadRef.current = false;
     }
   }
 
+  /* ---------- keep default_user_group_id valid when list changes ---- */
+  useEffect(() => {
+    if (!groups.length) return;
+    setConfig((prev) => {
+      if (prev.default_user_group_id && groups.some(g => g.id === prev.default_user_group_id)) {
+        return prev;
+      }
+      return { ...prev, default_user_group_id: groups[0].id };
+    });
+  }, [groups, setConfig]);
+
   /* ---------- setters ---------- */
-  const toggleReg      = (v:boolean)=>setConfig((p)=>({...p, registration_enabled:v}));
-  const togglePub      = (v:boolean)=>setConfig((p)=>({...p, public_upload_enabled:v}));
-  const changeGroup    = (v:string) =>setConfig((p)=>({...p, default_user_group_id:+v}));
-  const changeTemplate = (v:string) =>setConfig((p)=>({...p, upload_path_template:v}));
+  const toggleReg      = (v:boolean)=>setConfig((p)=>({ ...p, registration_enabled:v }));
+  const togglePub      = (v:boolean)=>setConfig((p)=>({ ...p, public_upload_enabled:v }));
+  const changeGroup    = (v:string) =>setConfig((p)=>({ ...p, default_user_group_id:+v }));
+  const changeTemplate = (v:string) =>setConfig((p)=>({ ...p, upload_path_template:v }));
 
   /* ---------- save ---------- */
   async function save() {
@@ -117,12 +127,23 @@ export default function ConfigsTab() {
     label: g.name,
   }));
 
+  /* shortcut to earliest valid default id */
+  const defaultId = groups.length ? (config.default_user_group_id ?? groups[0].id) : "";
+
   /* ------------------------------------------------------------------ */
   return (
     <div className={cn(
       "p-4 bg-theme-100/25 dark:bg-theme-900/25 rounded-lg",
       "border border-theme-200/50 dark:border-theme-800/50",
+      "relative",
     )}>
+      {/* overlay spinner when refreshing */}
+      {refreshing && (
+        <div className="absolute inset-0 bg-theme-50/60 dark:bg-theme-800/60 backdrop-blur-sm flex items-center justify-center z-10 rounded-lg">
+          <BiLoader className="w-6 h-6 animate-spin text-theme-500" />
+        </div>
+      )}
+
       <h3 className="text-lg font-medium mb-2">Site Configurations</h3>
 
       {errorMsg && (
@@ -131,7 +152,7 @@ export default function ConfigsTab() {
         </p>
       )}
 
-      {!fetched ? (
+      {loading && groups.length === 0 ? (
         Skeleton
       ) : (
         <>
@@ -139,22 +160,18 @@ export default function ConfigsTab() {
             <Toggle label="Registration Enabled" checked={config.registration_enabled} onChange={toggleReg}/>
             <Toggle label="Public Upload Enabled" checked={config.public_upload_enabled} onChange={togglePub}/>
 
-            {/* default group */}
-            {groups.length === 0 ? (
-              <p className="text-red-500 text-sm">No normal groups found – create one first.</p>
-            ) : (
-              <div>
-                <label className="block mb-1 text-sm text-theme-600 dark:text-theme-400">
-                  Default User Group
-                </label>
-                <Select
-                  value={(config.default_user_group_id ?? groups[0].id).toString()}
-                  onValueChange={changeGroup}
-                  options={groupOptions}
-                  minWidth="100%"
-                />
-              </div>
-            )}
+            {/* default group select */}
+            <div>
+              <label className="block mb-1 text-sm text-theme-600 dark:text-theme-400">
+                Default User Group
+              </label>
+              <Select
+                value={defaultId.toString()}
+                onValueChange={changeGroup}
+                options={groupOptions}
+                minWidth="100%"
+              />
+            </div>
 
             {/* upload path */}
             <div>
