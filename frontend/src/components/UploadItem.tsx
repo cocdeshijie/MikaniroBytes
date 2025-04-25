@@ -10,7 +10,6 @@ import {
   FiCheck,
 } from "react-icons/fi";
 import {
-  uploadedItemsAtom,
   uploadTasksAtom,
 } from "@/atoms/uploadAtoms";
 import { cn } from "@/utils/cn";
