@@ -54,8 +54,9 @@ export default function GroupsTab() {
     setLoading(true); setError("");
     try {
       setGroups(await getGroups(session?.accessToken));
-    } catch (e: any) {
-      setError(e.message || "Failed to fetch groups");
+    } catch (e) {  // Remove ': any'
+      const errorMessage = e instanceof Error ? e.message : "Failed to fetch groups";
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -76,8 +77,9 @@ export default function GroupsTab() {
     try {
       await apiDeleteGroup(g.id, deleteFiles, session?.accessToken);
       del(g.id);
-    } catch (e: any) {
-      setError(e.message || "Delete failed");
+    } catch (e) {  // Remove ': any'
+      const errorMessage = e instanceof Error ? e.message : "Delete failed";
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

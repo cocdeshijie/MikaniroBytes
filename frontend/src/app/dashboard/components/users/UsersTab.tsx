@@ -1,7 +1,7 @@
 "use client";
 
 import { atom, useAtom } from "jotai";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { BiTrash } from "react-icons/bi";
 import { FiLoader } from "react-icons/fi";
@@ -9,7 +9,6 @@ import { cn } from "@/utils/cn";
 import { ByteValueTooltip } from "../groups/ByteValueTooltip";
 import { useToast } from "@/lib/toast";
 import ViewUserFilesDialog from "./ViewUserFilesDialog";
-import MoveUserSelect from "./MoveUserSelect";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { Select, SelectOption } from "@/components/ui/Select";
 import {
@@ -63,8 +62,9 @@ export default function UsersTab() {
 
       const g = await getGroups(session?.accessToken);
       setGroups(g.filter((x) => !EXCLUDE.includes(x.name)).map(({ id, name }) => ({ id, name })));
-    } catch (e: any) {
-      setError(e.message || "Load error");
+    } catch (e) { // Remove ': any'
+      const errorMessage = e instanceof Error ? e.message : "Load error";
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -77,8 +77,9 @@ export default function UsersTab() {
       const updated = await updateUserGroup(userId, newGroupId, session?.accessToken);
       setUsers((p) => p.map((u) => (u.id === updated.id ? updated : u)));
       push({ title: "Group updated", variant: "success" });
-    } catch (e: any) {
-      setError(e.message || "Update failed");
+    } catch (e) { // Remove ': any'
+      const errorMessage = e instanceof Error ? e.message : "Update failed";
+      setError(errorMessage);
       push({ title: "Update failed", variant: "error" });
     } finally {
       setLoading(false);
@@ -91,8 +92,9 @@ export default function UsersTab() {
       await apiDeleteUser(user.id, deleteFiles, session?.accessToken);
       setUsers((p) => p.filter((u) => u.id !== user.id));
       push({ title: "User deleted", variant: "success" });
-    } catch (e: any) {
-      setError(e.message || "Delete failed");
+    } catch (e) { // Remove ': any'
+      const errorMessage = e instanceof Error ? e.message : "Delete failed";
+      setError(errorMessage);
       push({ title: "Delete failed", variant: "error" });
     } finally {
       setLoading(false);

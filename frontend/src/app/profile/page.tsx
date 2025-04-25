@@ -36,7 +36,7 @@ export default function ProfilePage() {
 
   const [userInfo, setUserInfo] = useAtom(userInfoAtom);
   const [sessions, setSessions] = useAtom(sessionsAtom);
-  const [loading, setLoading]   = useAtom(loadingAtom);
+  const [, setLoading]   = useAtom(loadingAtom);
   const [errorMsg, setError]    = useAtom(errorAtom);
 
   const [oldPw, setOldPw]       = useAtom(oldPwA);
@@ -69,14 +69,15 @@ export default function ProfilePage() {
           token: session.accessToken,
         });
         setSessions(list);
-      } catch (e: any) {
-        setError(e.message ?? "Failed to load sessions");
+      } catch (e) {  // Remove ': any'
+        const errorMessage = e instanceof Error ? e.message : "Failed to load sessions";
+        setError(errorMessage);
       } finally {
         setLoading(false);
         setFetched(true);
       }
     })();
-  }, [status, session, fetched, setUserInfo, setLoading, setError, setSessions]);
+  }, [status, session, fetched, setUserInfo, setLoading, setError, setSessions, setFetched]);
 
   /* ------------------------------------------------------------------
    *                               HELPERS
@@ -89,8 +90,9 @@ export default function ProfilePage() {
       });
       setSessions((p) => p.filter((s) => s.session_id !== sessionId));
       push({ title: "Session revoked", variant: "success" });
-    } catch (e: any) {
-      push({ title: "Revoke failed", description: e.message, variant: "error" });
+    } catch (e) {  // Remove ': any'
+      const errorMessage = e instanceof Error ? e.message : "Revoke failed";
+      push({ title: "Revoke failed", description: errorMessage, variant: "error" });
     }
   };
 
@@ -103,8 +105,9 @@ export default function ProfilePage() {
       });
       setSessions([]);
       push({ title: "Logged out everywhere", variant: "success" });
-    } catch (e: any) {
-      push({ title: "Logout-all failed", description: e.message, variant: "error" });
+    } catch (e) {  // Remove ': any'
+      const errorMessage = e instanceof Error ? e.message : "Logout-all failed";
+      push({ title: "Logout-all failed", description: errorMessage, variant: "error" });
     }
   };
 
@@ -119,8 +122,9 @@ export default function ProfilePage() {
       push({ title: "Password updated", variant: "success" });
       setOldPw("");
       setNewPw("");
-    } catch (e: any) {
-      push({ title: "Password change failed", description: e.message, variant: "error" });
+    } catch (e) {  // Remove ': any'
+      const errorMessage = e instanceof Error ? e.message : "Password change failed";
+      push({ title: "Password change failed", description: errorMessage, variant: "error" });
     }
   };
 

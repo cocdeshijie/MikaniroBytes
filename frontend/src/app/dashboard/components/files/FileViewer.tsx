@@ -6,6 +6,7 @@ import {
   useCallback,
   useMemo,
 } from "react";
+import Image from 'next/image';
 import { atom, useAtom } from "jotai";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
@@ -102,13 +103,15 @@ export default function FileViewer({
       try {
         const data = await api<RemoteFile[]>(fetchEndpoint, { token: sessionToken });
         setFiles(data);
-      } catch (e: any) {
-        setErr(e.message || "Load error");
+      } catch (e) {  // Remove ': any'
+        const errorMessage = e instanceof Error ? e.message : "Load error";
+        setErr(errorMessage);
       } finally {
         setLoading(false);
         if (needsRefresh) setNeedsRefresh(false);
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchEndpoint, sessionToken, needsRefresh, setNeedsRefresh]);
 
   /* ---------- selection helpers ---------- */
@@ -116,7 +119,11 @@ export default function FileViewer({
     (id: number, additive: boolean) => {
       setSel((prev: Set<number>): Set<number> => {
         const next = new Set<number>(additive ? prev : []);
-        next.has(id) ? next.delete(id) : next.add(id);
+        if (next.has(id)) {
+          next.delete(id);
+        } else {
+          next.add(id);
+        }
         return next;
       });
     },
@@ -150,8 +157,9 @@ export default function FileViewer({
         download: file.original_filename ?? `file_${file.file_id}`,
       }).click();
       URL.revokeObjectURL(href);
-    } catch (e: any) {
-      push({ title: e.message ?? "Download error", variant: "error" });
+    } catch (e) {  // Remove ': any'
+      const errorMessage = e instanceof Error ? e.message : "Download error";
+      push({ title: errorMessage, variant: "error" });
     } finally {
       setDL(null);
     }
@@ -174,8 +182,9 @@ export default function FileViewer({
       }).click();
       URL.revokeObjectURL(href);
       push({ title: "ZIP downloaded", variant: "success" });
-    } catch (e: any) {
-      push({ title: e.message || "ZIP failed", variant: "error" });
+    } catch (e) {  // Remove ': any'
+      const errorMessage = e instanceof Error ? e.message : "ZIP failed";
+      push({ title: errorMessage, variant: "error" });
     } finally {
       setZipBusy(false);
     }
@@ -197,8 +206,9 @@ export default function FileViewer({
         title: `${ids.length} file${ids.length !== 1 ? "s" : ""} deleted`,
         variant: "success",
       });
-    } catch (e: any) {
-      push({ title: e.message || "Delete failed", variant: "error" });
+    } catch (e) {  // Remove ': any'
+      const errorMessage = e instanceof Error ? e.message : "Delete failed";
+      push({ title: errorMessage, variant: "error" });
     } finally {
       setLoading(false);
       setWantsDelete(false);
@@ -230,7 +240,8 @@ export default function FileViewer({
         ro.disconnect();
         registerTile(file.file_id, null);
       };
-    }, [registerTile, file.file_id]);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [file.file_id]);
 
     const handleClick = (e: React.MouseEvent) => {
       toggleSelect(file.file_id, e.ctrlKey || e.metaKey);
@@ -266,11 +277,13 @@ export default function FileViewer({
           if (file.has_preview && file.preview_url) {
             // bigger image
             return (
-              <img
-                src={absolute(file.preview_url)}
-                alt="Preview"
-                className="h-16 w-16 object-cover rounded-md"
-              />
+                <Image
+                  src={absolute(file.preview_url)}
+                  alt="Preview"
+                  width={64}
+                  height={64}
+                  className="h-16 w-16 object-cover rounded-md"
+                />
             );
           }
           // bigger fallback icon

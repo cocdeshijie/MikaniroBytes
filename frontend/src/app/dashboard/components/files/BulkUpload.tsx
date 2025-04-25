@@ -7,10 +7,7 @@ import { cn } from "@/utils/cn";
 import { useToast } from "@/lib/toast";
 import { filesNeedsRefreshAtom } from "@/atoms/fileAtoms";
 import { atom, useAtom } from "jotai";
-import {
-  bulkUpload,
-  BulkUploadResponse,
-} from "@/lib/files";
+import { bulkUpload } from "@/lib/files";
 
 /* ─────────── local jotai atoms ─────────── */
 const phaseA     = () => atom<"idle" | "selected" | "uploading" | "done" | "error">("idle");
@@ -85,10 +82,15 @@ export default function BulkUpload() {
       setInfo(`${res.success}/${total} succeeded | ${failedNum} failed`);
       setPhase("done");
       push({ title: "Bulk upload finished", variant: "success" });
-    } catch (e: any) {
-      setErr(e.message ?? "Upload failed");
+    } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : "Upload failed";
+      setErr(errorMessage);
       setPhase("error");
-      push({ title: "Bulk upload failed", description: e.message, variant: "error" });
+      push({
+        title: "Bulk upload failed",
+        description: errorMessage,
+        variant: "error"
+      });
     } finally {
       /* always refresh viewer list */
       setNeedsRefresh(true);

@@ -33,8 +33,12 @@ export default function LoginPage() {
       }
       push({ title: "Welcome back!", variant: "success" });
       router.push("/profile");
-    } catch (err: any) {
-      push({ title: "Login Error", description: err?.message ?? "Login failed.", variant: "error" });
+    } catch (err) {
+      push({
+        title: "Login Error",
+        description: err instanceof Error ? err.message : "Login failed.",
+        variant: "error"
+      });
     }
   }
 

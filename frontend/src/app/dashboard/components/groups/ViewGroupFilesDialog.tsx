@@ -11,12 +11,10 @@ export default function ViewGroupFilesDialog({
                                                  groupId,
                                                  groupName,
                                                  sessionToken,
-                                                 className
                                              }: {
     groupId: number,
     groupName: string,
     sessionToken: string,
-    className?: string
 }) {
   const [open, setOpen] = useAtom(useMemo(() => atom(false), []));
 
@@ -43,7 +41,7 @@ export default function ViewGroupFilesDialog({
         >
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-medium">
-              Files in group “{groupName}”
+              Files in group "{groupName}"
             </h3>
             <Dialog.Close asChild>
               <button className="p-2 rounded hover:bg-theme-200/50 dark:hover:bg-theme-800/50">

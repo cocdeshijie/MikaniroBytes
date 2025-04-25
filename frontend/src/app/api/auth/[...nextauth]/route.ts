@@ -2,7 +2,7 @@ import NextAuth, { type NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import type { Session } from "next-auth";
 import type { JWT } from "next-auth/jwt";
-import { BACKEND_URL, NEXTAUTH_SECRET } from "@/lib/env";
+import { NEXTAUTH_SECRET } from "@/lib/env";
 import { api } from "@/lib/api";
 
 /* ──────────────────────────────────────────────────

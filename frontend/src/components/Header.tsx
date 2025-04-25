@@ -199,11 +199,11 @@ const MobileNavDialog = () => {
 /*  Main Header Component                                             */
 /* ────────────────────────────────────────────────────────────────── */
 const Header = () => {
-  const [isScrolled, setIsScrolled] = useAtom(scrollAtom);
+  const [, setIsScrolled] = useAtom(scrollAtom);  // Only destructure the setter since isScrolled isn't used
   const [regEnabled, setRegEnabled] = useAtom(regEnabledAtom);
-  const { data: session }           = useSession();
-  const { theme, setTheme }         = useTheme();
-  const pathname                    = usePathname();
+  const { data: session } = useSession();
+  const { theme, setTheme } = useTheme();
+  const pathname = usePathname();
 
   /* track scroll shadow */
   useEffect(() => {

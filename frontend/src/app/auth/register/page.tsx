@@ -34,7 +34,7 @@ export default function RegisterPage() {
         setEnabled(true);
       }
     })();
-  }, []);
+  }, [setEnabled]);
 
   async function handleRegister(e: FormEvent) {
     e.preventDefault();
@@ -53,9 +53,14 @@ export default function RegisterPage() {
       if (login?.error) throw new Error(login.error);
 
       router.push("/profile");
-    } catch (err: any) {
-      setError(err.message || "Registration error");
-      push({ title: "Registration failed", description: err.message, variant: "error" });
+    } catch (err) { // Remove ': any' type annotation
+      const errorMessage = err instanceof Error ? err.message : "Registration error";
+      setError(errorMessage);
+      push({
+        title: "Registration failed",
+        description: errorMessage,
+        variant: "error"
+      });
     }
   }
 

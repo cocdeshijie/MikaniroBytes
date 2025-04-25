@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { atom, useAtom } from "jotai";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Tooltip from "@radix-ui/react-tooltip";
-import { FiX, FiFolder } from "react-icons/fi";
+import { FiX } from "react-icons/fi";
 import { BiTrash } from "react-icons/bi";
 import { cn } from "@/utils/cn";
 import { useToast } from "@/lib/toast";
@@ -40,11 +40,11 @@ export default function ViewUsersDialog({
   const { push } = useToast();
 
   /* ---- local atoms (scoped per dialog) ---- */
-  const openA    = useMemo(() => atom(false), [group.id]);
-  const loadingA = useMemo(() => atom(false), [group.id]);
-  const errorA   = useMemo(() => atom(""), [group.id]);
-  const usersA   = useMemo(() => atom<UserItem[]>([]), [group.id]);
-  const groupsA  = useMemo(() => atom<{ id: number; name: string }[]>([]), [group.id]);
+  const openA    = useMemo(() => atom(false), []);
+  const loadingA = useMemo(() => atom(false), []);
+  const errorA   = useMemo(() => atom(""), []);
+  const usersA   = useMemo(() => atom<UserItem[]>([]), []);
+  const groupsA  = useMemo(() => atom<{ id: number; name: string }[]>([]), []);
 
   const [open, setOpen]       = useAtom(openA);
   const [loading, setLoading] = useAtom(loadingA);
@@ -68,8 +68,9 @@ export default function ViewUsersDialog({
           (g) => !["SUPER_ADMIN", "GUEST"].includes(g.name),
         ).map(({ id, name }) => ({ id, name })),
       );
-    } catch (e: any) {
-      setError(e.message || "Load error");
+    } catch (e) { // Remove ': any'
+      const errorMessage = e instanceof Error ? e.message : "Load error";
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -87,8 +88,9 @@ export default function ViewUsersDialog({
       setUsers((p) => p.filter((u) => u.id !== userId));
       push({ title: "User moved", variant: "success" });
       onChanged();
-    } catch (e: any) {
-      setError(e.message || "Move failed");
+    } catch (e) { // Remove ': any'
+      const errorMessage = e instanceof Error ? e.message : "Move failed";
+      setError(errorMessage);
       push({ title: "Move failed", variant: "error" });
     } finally {
       setLoading(false);
@@ -102,8 +104,9 @@ export default function ViewUsersDialog({
       setUsers((p) => p.filter((u) => u.id !== user.id));
       push({ title: "User deleted", variant: "success" });
       onChanged();
-    } catch (e: any) {
-      setError(e.message || "Delete failed");
+    } catch (e) { // Remove ': any'
+      const errorMessage = e instanceof Error ? e.message : "Delete failed";
+      setError(errorMessage);
       push({ title: "Delete failed", variant: "error" });
     } finally {
       setLoading(false);

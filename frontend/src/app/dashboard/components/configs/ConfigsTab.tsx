@@ -18,6 +18,15 @@ interface SystemSettingsData {
   default_user_group_id: number | null;
   upload_path_template: string;
 }
+interface GroupResponse {
+  id: number;
+  name: string;
+  settings?: {
+    allowed_extensions: string[];
+    max_file_size: number | null;
+    max_storage_size: number | null;
+  };
+}
 
 /* ---------- ATOMS ---------- */
 const loadingA    = atom(false);      // true while network in‑flight (cold load OR save)
@@ -61,7 +70,7 @@ export default function ConfigsTab() {
     try {
       const [settings, raw] = await Promise.all([
         api<SystemSettingsData>("/admin/system-settings", { token: session?.accessToken }),
-        api<any[]>("/admin/groups", { token: session?.accessToken }),
+        api<GroupResponse[]>("/admin/groups", { token: session?.accessToken }), // Replace any[] with GroupResponse[]
       ]);
 
       setConfig(settings);

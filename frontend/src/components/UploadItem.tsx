@@ -10,7 +10,6 @@ import {
   FiCheck,
 } from "react-icons/fi";
 import {
-  UploadTask,
   uploadedItemsAtom,
   uploadTasksAtom,
 } from "@/atoms/uploadAtoms";
@@ -29,7 +28,6 @@ export default function UploadItem({ taskId }: { taskId: string }) {
   );
   const task = useAtom(taskAtom)[0];
   const { push } = useToast();
-  const [, setUploadedItems] = useAtom(uploadedItemsAtom);
 
   if (!task) return null;
 
