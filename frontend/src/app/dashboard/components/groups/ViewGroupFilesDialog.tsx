@@ -6,6 +6,7 @@ import { FiX, FiFolder } from "react-icons/fi";
 import { cn } from "@/utils/cn";
 import FileViewer from "../files/FileViewer";
 import { atom, useAtom } from "jotai";
+import { NEXT_PUBLIC_BACKEND_URL } from "@/lib/env";
 
 export default function ViewGroupFilesDialog({
                                                  groupId,
@@ -51,7 +52,7 @@ export default function ViewGroupFilesDialog({
           </div>
 
           <FileViewer
-            fetchEndpoint={`${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/groups/${groupId}/files`}
+            fetchEndpoint={`${NEXT_PUBLIC_BACKEND_URL}/admin/groups/${groupId}/files`}
             sessionToken={sessionToken}
             readOnly={false}
           />

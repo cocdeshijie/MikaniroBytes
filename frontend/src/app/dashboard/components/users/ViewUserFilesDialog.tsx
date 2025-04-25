@@ -6,6 +6,7 @@ import { FiX, FiFolder } from "react-icons/fi";
 import { cn } from "@/utils/cn";
 import FileViewer from "../files/FileViewer";
 import { atom, useAtom } from "jotai";
+import { NEXT_PUBLIC_BACKEND_URL } from "@/lib/env";
 
 export default function ViewUserFilesDialog({
   userId,
@@ -50,7 +51,7 @@ export default function ViewUserFilesDialog({
           </div>
 
           <FileViewer
-            fetchEndpoint={`${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/users/${userId}/files`}
+            fetchEndpoint={`${NEXT_PUBLIC_BACKEND_URL}/admin/users/${userId}/files`}
             sessionToken={sessionToken}
             readOnly={false}
           />

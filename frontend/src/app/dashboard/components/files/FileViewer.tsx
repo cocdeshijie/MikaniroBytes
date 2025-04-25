@@ -24,6 +24,7 @@ import { useLasso } from "@/hooks/useLasso";
 import { api } from "@/lib/api";
 import { useToast } from "@/lib/toast";
 import { filesNeedsRefreshAtom } from "@/atoms/fileAtoms";
+import { NEXT_PUBLIC_BACKEND_URL } from "@/lib/env";
 
 /* ------------------------------------------------------------------ */
 /*                             TYPEDEFS                               */
@@ -69,10 +70,14 @@ function shortenFilename(full: string, limit = 26): string {
   if (avail <= 0) return base.slice(0, 1) + "…" + ext;
   return base.slice(0, avail) + "…" + base.slice(-tail) + ext;
 }
-const absolute = (link: string) =>
-  /^(https?:)?\/\//.test(link)
+const absolute = (link: string) => {
+  // if link = "previews/abc.jpg", ensure we add "/"
+  const safeLink = link.startsWith("/") ? link : `/${link}`;
+
+  return /^(https?:)?\/\//.test(link)
     ? link
-    : `${process.env.NEXT_PUBLIC_BACKEND_URL}${link}`;
+    : `${NEXT_PUBLIC_BACKEND_URL}${safeLink}`;
+};
 
 /* ================================================================== */
 /*                            COMPONENT                               */
