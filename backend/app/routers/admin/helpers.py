@@ -28,9 +28,9 @@ def get_guest_user(db: Session) -> User:
     """
     guest = (
         db.query(User)
-        .join(Group, Group.id == User.group_id)
-        .filter(Group.name == "GUEST", User.username == "guest")
-        .first()
+          .join(Group, Group.id == User.group_id)
+          .filter(Group.name == "GUEST", User.username == "guest")
+          .first()
     )
     if not guest:
         raise HTTPException(
@@ -42,21 +42,34 @@ def get_guest_user(db: Session) -> User:
 
 def delete_physical_files(file_rows: List[File]) -> int:
     """
-    Delete the files on disk referenced by *file_rows*,
-    and remove now-empty directories up to the uploads/ root.
-    Returns the number of file paths attempted.
+    Delete the main files + all preview images from disk,
+    plus remove now-empty directories if any.
+    Returns the number of main files processed.
     """
-    from app.routers.files.management import disk_path, _cleanup_empty_dirs  # local import to avoid cyclic import
+    from app.routers.files.management import disk_path, _cleanup_empty_dirs
 
     count = 0
     for f in file_rows:
+        # 1) Delete all preview images (but do NOT remove parent folders)
+        for preview in f.previews:
+            preview_abs = os.path.join("previews", preview.storage_path)
+            if preview_abs and os.path.isfile(preview_abs):
+                try:
+                    os.remove(preview_abs)
+                    # Not calling _cleanup_empty_dirs(preview_abs) here,
+                    # so we don't remove entire /previews folder.
+                except OSError:
+                    pass
+
+        # 2) Delete the main file (and optionally remove empty dirs under /uploads)
         rel = f.storage_data.get("path", "")
-        abs_path = disk_path(rel)
+        abs_path = disk_path(rel)  # this is your /uploads path
         if abs_path and os.path.isfile(abs_path):
             try:
                 os.remove(abs_path)
-                _cleanup_empty_dirs(abs_path)
+                _cleanup_empty_dirs(abs_path)  # we still remove empty folders from /uploads if you want
             except OSError:
                 pass
         count += 1
+
     return count
