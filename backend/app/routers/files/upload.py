@@ -15,7 +15,7 @@ from app.db.models.system_settings import SystemSettings
 from app.db.models.storage_enums import FileType
 from app.dependencies.auth import get_current_user, get_optional_user
 
-from .helpers import store_new_file
+from .helpers import store_new_file, store_file_from_archive
 from app.utils.image import is_image_filename
 from app.utils.preview import generate_preview_in_background
 
@@ -94,14 +94,15 @@ def upload_file(
 
 @router.post("/bulk-upload", response_model=BulkUploadSummary)
 async def bulk_upload(
-    background_tasks: BackgroundTasks,          # 1) Non-default param first
-    archive: UploadFile = FastFile(...),        # 2) Default param second
+    background_tasks: BackgroundTasks,
+    archive: UploadFile = FastFile(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    .zip/.tar/.tar.gz archive extraction.
-    Each file -> store_new_file, then schedule preview if it's an image.
+    .zip/.tar(.gz) extraction.
+    We preserve the subfolder structure exactly as it appears.
+    If recognized as an image => queue a preview.
     """
     settings = db.query(SystemSettings).first()
 
@@ -127,35 +128,29 @@ async def bulk_upload(
     def _import_file(member_name: str, file_reader: io.BufferedReader):
         nonlocal ok_count, fail_count
 
-        # Skip directories, symlinks, etc.
+        # If member_name ends with "/" or something, skip
         if not member_name or member_name.endswith("/"):
             return
-        # Load contents
         file_data = file_reader.read()
         if not file_data:
-            # skip empty
             return
 
-        # We do not do the hashing or DB row here now,
-        # just call our shared function
         try:
-            new_file = store_new_file(
+            # store the file exactly as in the archive
+            new_file = store_file_from_archive(
                 db=db,
                 file_contents=file_data,
-                original_filename=member_name,
-                owner_id=current_user.id,
-                settings=settings,
+                archive_path=member_name,
+                owner_id=current_user.id
             )
-
-            # If recognized as image => set file_type = IMAGE & spawn preview
-            if is_image_filename(new_file.original_filename or ""):
+            # If recognized as image => mark as IMAGE + queue preview
+            if is_image_filename(new_file.original_filename):
                 new_file.file_type = FileType.IMAGE
                 db.add(new_file)
                 db.commit()
                 background_tasks.add_task(generate_preview_in_background, new_file.id)
 
             ok_count += 1
-
         except Exception as exc:
             fail_count += 1
             summary_lines.append(f"{member_name}\t{exc}")
