@@ -16,7 +16,7 @@ from app.routers.files import router as files_router
 from app.routers.admin import router as admin_router
 
 UPLOAD_DIR = "uploads"
-
+PREVIEW_DIR = "previews"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -34,6 +34,7 @@ async def lifespan(app: FastAPI):
 
     # guarantee the static folder exists (prevents Starlette error)
     os.makedirs(UPLOAD_DIR, exist_ok=True)
+    os.makedirs(PREVIEW_DIR, exist_ok=True)
 
     yield
 
@@ -66,6 +67,12 @@ def create_app() -> FastAPI:
         "/uploads",
         StaticFiles(directory=UPLOAD_DIR, check_dir=False),
         name="uploads",
+    )
+
+    app.mount(
+        "/previews",
+        StaticFiles(directory=PREVIEW_DIR, check_dir=False),
+        name="previews",
     )
 
     # ------------------------------------------------------------------ #
