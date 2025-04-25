@@ -6,3 +6,4 @@ from .file import File
 from .image_file import ImageFile
 from .system_settings import SystemSettings
 from .user_session import UserSession
+from .file_preview import FilePreview

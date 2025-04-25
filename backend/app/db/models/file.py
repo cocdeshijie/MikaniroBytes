@@ -6,6 +6,7 @@ from sqlalchemy import (
     Enum,
     func,
     ForeignKey,
+    Boolean
 )
 from sqlalchemy.dialects.sqlite import JSON as SQLiteJSON
 from sqlalchemy.orm import relationship
@@ -23,9 +24,7 @@ class File(Base):
     size = Column(Integer, nullable=False, default=0)
 
     file_type = Column(Enum(FileType), nullable=False, default=FileType.BASE)
-    storage_type = Column(
-        Enum(StorageType), nullable=False, default=StorageType.LOCAL
-    )
+    storage_type = Column(Enum(StorageType), nullable=False, default=StorageType.LOCAL)
     storage_data = Column(SQLiteJSON, default=dict)
     content_type = Column(String, nullable=True)
 
@@ -36,8 +35,17 @@ class File(Base):
         Integer,
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
-        index=True,                         # ★ speeds up aggregation queries
+        index=True,
     )
     uploader = relationship("User", backref="files", foreign_keys=[user_id])
 
     original_filename = Column(String, nullable=True)
+
+    # ────────────────────────────────────────────────────────────────
+    #  Preview-related fields
+    # ────────────────────────────────────────────────────────────────
+    has_preview = Column(Boolean, default=False)           # True if at least one preview was generated
+    default_preview_path = Column(String, nullable=True)   # e.g. "previews/abc123.png"
+
+    # One-to-many relationship with FilePreview
+    previews = relationship("FilePreview", back_populates="parent_file", cascade="all, delete-orphan")
