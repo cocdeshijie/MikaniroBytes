@@ -7,6 +7,8 @@ services:
     environment:
       - MYSQL_ROOT_PASSWORD=mikanirobytes
       - MYSQL_DATABASE=mikanirobytes
+      - MYSQL_USER=mikanirobytes
+      - MYSQL_PASSWORD=mikanirobytes
     ports:
       - "3306:3306"
     volumes:
@@ -23,8 +25,8 @@ services:
       - DB_ENGINE=mysql
       - DB_HOST=db
       - DB_PORT=3306
-      - DB_USER=myuser
-      - DB_PASS=mypassword
+      - DB_USER=mikanirobytes
+      - DB_PASS=mikanirobytes
       - DB_NAME=mikanirobytes
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
 
