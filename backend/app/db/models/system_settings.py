@@ -33,4 +33,4 @@ class SystemSettings(Base):
     #     {M}  %M   2-digit minute
     #     {S}  %S   2-digit second
     # ────────────────────────────────────────────────────────────────
-    upload_path_template = Column(String, nullable=False, default="{Y}/{m}")
+    upload_path_template = Column(String(255), nullable=False, default="{Y}/{m}")

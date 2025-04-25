@@ -9,8 +9,8 @@ class FilePreview(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     file_id = Column(Integer, ForeignKey("files.id", ondelete="CASCADE"), nullable=False)
-    preview_type = Column(String, nullable=False, default="thumbnail")  # e.g. "thumbnail", "medium", "big"
-    storage_path = Column(String, nullable=False)  # where the preview is saved
+    preview_type = Column(String(255), nullable=False, default="thumbnail")  # e.g. "thumbnail", "medium", "big"
+    storage_path = Column(String(255), nullable=False)  # where the preview is saved
     width = Column(Integer, nullable=True)
     height = Column(Integer, nullable=True)
 
