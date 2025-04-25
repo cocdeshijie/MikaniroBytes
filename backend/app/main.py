@@ -4,17 +4,16 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.orm import Session
 
 from app.db.database import engine, SessionLocal
 from app.db.base_class import Base
 from app.db.models import *
 from app.utils.init_db import init_db
 
-# Routers
-from app.routers import auth
-from app.routers import files
-from app.routers import admin
+# New subpackage routers
+from app.routers.auth import router as auth_router
+from app.routers.files import router as files_router
+from app.routers.admin import router as admin_router
 
 UPLOAD_DIR = "uploads"
 
@@ -65,16 +64,16 @@ def create_app() -> FastAPI:
     # ------------------------------------------------------------------ #
     app.mount(
         "/uploads",
-        StaticFiles(directory=UPLOAD_DIR, check_dir=False),  # check_dir False as extra safety
+        StaticFiles(directory=UPLOAD_DIR, check_dir=False),
         name="uploads",
     )
 
     # ------------------------------------------------------------------ #
     # Routers                                                            #
     # ------------------------------------------------------------------ #
-    app.include_router(auth.router,  prefix="/auth",  tags=["auth"])
-    app.include_router(files.router, prefix="/files", tags=["files"])
-    app.include_router(admin.router, prefix="/admin", tags=["admin"])
+    app.include_router(auth_router,  prefix="/auth",  tags=["auth"])
+    app.include_router(files_router, prefix="/files", tags=["files"])
+    app.include_router(admin_router, prefix="/admin", tags=["admin"])
 
     return app
 
@@ -83,5 +82,4 @@ app = create_app()
 
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)
