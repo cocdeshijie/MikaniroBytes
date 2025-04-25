@@ -49,7 +49,7 @@ const Logo = () => {
                   : "text-theme-500 dark:text-theme-300"
               )}
             >
-              File
+              Mikaniro
             </div>
             <div
               className={cn(
@@ -57,9 +57,9 @@ const Logo = () => {
                 isHovered && "animate-spin"
               )}
             >
-              🔄
+              🍊
             </div>
-            <div className="pb-0.5 text-theme-500 dark:text-white">Bed</div>
+            <div className="pb-0.5 text-theme-500 dark:text-white">Bytes</div>
           </div>
           {isHovered && (
             <div
