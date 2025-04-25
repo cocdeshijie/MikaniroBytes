@@ -1,0 +1,36 @@
+version: '3.9'
+
+services:
+  backend:
+    build: ./backend
+    container_name: MikaniroBytes_backend
+    # Expose backend port 8000 on localhost:8000
+    ports:
+      - "8000:8000"
+    # Mount the local uploads folder -> container's /app/uploads
+    volumes:
+      - ./uploads:/app/uploads
+    # Optional environment variables for the backend
+    environment:
+      # Example placeholder if your code needs them:
+      # - SQLALCHEMY_DATABASE_URL=sqlite:///./filebed.db
+    # Command is uvicorn by default if set in the Dockerfile;
+    # you can override here if you want:
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+  frontend:
+    build: ./frontend
+    container_name: MikaniroBytes_frontend
+    # Expose frontend port 3000 on localhost:3000
+    ports:
+      - "3000:3000"
+    # The frontend depends on backend existing before starting
+    depends_on:
+      - backend
+    # Environment variables so Next can talk to the backend inside Docker
+    environment:
+      # Inside Docker, the backend is accessible at http://backend:8000
+      # So we define that for your Next.js code:
+      - NEXT_PUBLIC_BACKEND_URL=http://backend:8000
+    # Start the Next.js production server
+    command: npm run start
