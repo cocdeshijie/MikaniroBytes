@@ -1,18 +1,23 @@
-
 import io
 import tarfile
 import zipfile
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File as FastFile
+from fastapi import (
+    APIRouter, Depends, HTTPException, Request,
+    UploadFile, File as FastFile, BackgroundTasks
+)
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.db.models.user import User
 from app.db.models.system_settings import SystemSettings
+from app.db.models.storage_enums import FileType
 from app.dependencies.auth import get_current_user, get_optional_user
 
 from .helpers import store_new_file
+from app.utils.image import is_image_filename
+from app.utils.preview import generate_preview_in_background
 
 UPLOAD_DIR = "uploads"
 router = APIRouter()
@@ -29,18 +34,16 @@ class BulkUploadSummary(BaseModel):
 def upload_file(
     request: Request,
     file: UploadFile = FastFile(...),
+    background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_optional_user),
 ):
     """
-    Accept a single file upload and persist it on disk and in the DB.
-    - If no session, check public_upload_enabled in system settings.
-    - If session is present, the file is tied to the user (owner_id).
-    - Otherwise guest user is used.
+    Single file upload, plus optional preview generation for images.
     """
     settings = db.query(SystemSettings).first()
 
-    # Public upload check
+    # Check public upload if no user
     if current_user is None:
         if settings and not settings.public_upload_enabled:
             raise HTTPException(status_code=403, detail="Public uploads disabled")
@@ -52,25 +55,32 @@ def upload_file(
     if not contents:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
-    # Determine user_id (or fallback to 'guest' user)
+    # Determine owner
     if current_user:
         owner_id = current_user.id
     else:
         guest_user = db.query(User).filter(User.username == "guest").first()
         owner_id = guest_user.id if guest_user else None
 
-    # Store the file with our helper
-    try:
-        db_file = store_new_file(
-            db=db,
-            file_contents=contents,
-            original_filename=file.filename,
-            owner_id=owner_id,
-            settings=settings,
-        )
-    except ValueError as ex:
-        # e.g. if 'Empty file'
-        raise HTTPException(status_code=400, detail=str(ex))
+    # Create the file row
+    db_file = store_new_file(
+        db=db,
+        file_contents=contents,
+        original_filename=file.filename,
+        owner_id=owner_id,
+        settings=settings,
+    )
+
+    # If it's recognized as an image, set file_type and schedule preview
+    if is_image_filename(db_file.original_filename or ""):
+        db_file.file_type = FileType.IMAGE
+        db.add(db_file)
+        db.commit()
+
+        if background_tasks is None:
+            raise HTTPException(status_code=500, detail="BackgroundTasks not available")
+
+        background_tasks.add_task(generate_preview_in_background, db_file.id)
 
     base_url = f"{request.url.scheme}://{request.url.netloc}"
     return {
@@ -84,24 +94,23 @@ def upload_file(
 
 @router.post("/bulk-upload", response_model=BulkUploadSummary)
 async def bulk_upload(
-    archive: UploadFile = FastFile(...),
+    background_tasks: BackgroundTasks,          # 1) Non-default param first
+    archive: UploadFile = FastFile(...),        # 2) Default param second
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    Accept a .zip / .tar / .tar.gz archive and import ALL files inside.
-    - The original folder structure is preserved under /uploads.
-    - Each imported file row is bound to current_user.
-    - Returns a summary of successes/failures.
+    .zip/.tar/.tar.gz archive extraction.
+    Each file -> store_new_file, then schedule preview if it's an image.
     """
     settings = db.query(SystemSettings).first()
 
     name_lower = (archive.filename or "").lower()
     if not (
-        name_lower.endswith(".zip") or
-        name_lower.endswith(".tar") or
-        name_lower.endswith(".tar.gz") or
-        name_lower.endswith(".tgz")
+        name_lower.endswith(".zip")
+        or name_lower.endswith(".tar")
+        or name_lower.endswith(".tar.gz")
+        or name_lower.endswith(".tgz")
     ):
         raise HTTPException(400, "Only .zip or .tar(.gz) are accepted.")
 
@@ -130,14 +139,23 @@ async def bulk_upload(
         # We do not do the hashing or DB row here now,
         # just call our shared function
         try:
-            store_new_file(
+            new_file = store_new_file(
                 db=db,
                 file_contents=file_data,
                 original_filename=member_name,
                 owner_id=current_user.id,
                 settings=settings,
             )
+
+            # If recognized as image => set file_type = IMAGE & spawn preview
+            if is_image_filename(new_file.original_filename or ""):
+                new_file.file_type = FileType.IMAGE
+                db.add(new_file)
+                db.commit()
+                background_tasks.add_task(generate_preview_in_background, new_file.id)
+
             ok_count += 1
+
         except Exception as exc:
             fail_count += 1
             summary_lines.append(f"{member_name}\t{exc}")
