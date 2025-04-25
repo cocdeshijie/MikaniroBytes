@@ -67,6 +67,8 @@ def batch_delete_files(
 
     Normal users => can only delete their own files.
     SUPER_ADMIN => can delete any files.
+
+    We now call delete_physical_files(...) to ensure previews are also removed.
     """
     if not payload.ids:
         raise HTTPException(status_code=400, detail="Empty ids list")
@@ -81,20 +83,20 @@ def batch_delete_files(
     if not rows:
         raise HTTPException(status_code=404, detail="No matching files found")
 
-    deleted_ids = []
-    for f in rows:
-        rel = f.storage_data.get("path", "")
-        abs_f = disk_path(rel)
-        if os.path.isfile(abs_f):
-            try:
-                os.remove(abs_f)
-                _cleanup_empty_dirs(abs_f)
-            except OSError:
-                pass
-        deleted_ids.append(f.id)
-        db.delete(f)
+    #
+    # -- NEW LOGIC: Instead of manually removing main files from disk,
+    #    we call delete_physical_files(rows). This handles both the file
+    #    and all previews.
+    #
+    from app.routers.admin.helpers import delete_physical_files
+    delete_physical_files(rows)   # physically remove main & preview files
 
+    # Now remove the DB rows:
+    for f in rows:
+        db.delete(f)
     db.commit()
+
+    deleted_ids = [f.id for f in rows]
     return {"deleted": deleted_ids}
 
 
