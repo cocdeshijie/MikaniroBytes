@@ -149,12 +149,10 @@ def delete_user(
             status_code=400, detail=f"Cannot delete {usr.group.name} user."
         )
 
-    # Delete sessions
     db.query(UserSession).filter(UserSession.user_id == usr.id).delete(
         synchronize_session=False
     )
 
-    # Files
     q_files = db.query(File).filter(File.user_id == usr.id)
     if delete_files:
         delete_physical_files(q_files.all())
@@ -172,6 +170,9 @@ def delete_user(
     }
 
 
+# ─────────────────────────────────────────────────────────────────────
+# NEW: Provide preview info in "list_user_files"
+# ─────────────────────────────────────────────────────────────────────
 @router.get("/users/{user_id}/files", response_model=List[dict])
 def list_user_files(
     user_id: int,
@@ -180,6 +181,7 @@ def list_user_files(
 ):
     """
     List all files owned by a specific user. SUPER_ADMIN only.
+    Now includes preview info (has_preview, preview_url).
     """
     ensure_superadmin(current_user)
 
@@ -189,11 +191,20 @@ def list_user_files(
         .order_by(File.id.desc())
         .all()
     )
-    return [
-        {
-            "file_id": f.id,
-            "original_filename": f.original_filename,
-            "direct_link": f"/uploads/{f.storage_data.get('path')}",
-        }
-        for f in rows
-    ]
+
+    out = []
+    for f in rows:
+        has_preview = bool(f.has_preview and f.default_preview_path)
+        preview_url = None
+        if has_preview:
+            preview_url = f"/previews/{f.default_preview_path}"
+        out.append(
+            {
+                "file_id": f.id,
+                "original_filename": f.original_filename,
+                "direct_link": f"/uploads/{f.storage_data.get('path')}",
+                "has_preview": has_preview,
+                "preview_url": preview_url,
+            }
+        )
+    return out

@@ -48,6 +48,10 @@ class MyFileItem(BaseModel):
     original_filename: Optional[str] = None
     direct_link: str
 
+    # NEW FIELDS for previews
+    has_preview: bool
+    preview_url: Optional[str] = None
+
 
 class BatchDeletePayload(BaseModel):
     ids: List[int]
@@ -83,15 +87,9 @@ def batch_delete_files(
     if not rows:
         raise HTTPException(status_code=404, detail="No matching files found")
 
-    #
-    # -- NEW LOGIC: Instead of manually removing main files from disk,
-    #    we call delete_physical_files(rows). This handles both the file
-    #    and all previews.
-    #
     from app.routers.admin.helpers import delete_physical_files
     delete_physical_files(rows)   # physically remove main & preview files
 
-    # Now remove the DB rows:
     for f in rows:
         db.delete(f)
     db.commit()
@@ -110,7 +108,8 @@ def list_my_files(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Return a lightweight list of the current user's files.
+    Return a lightweight list of the current user's files,
+    now including preview data if available.
     """
     rows = (
         db.query(FileModel)
@@ -123,11 +122,21 @@ def list_my_files(
 
     out: List[MyFileItem] = []
     for f in rows:
+        # Build direct link
+        direct_link = f"{base_url}/uploads/{f.storage_data.get('path')}"
+        # Check preview
+        has_preview = bool(f.has_preview and f.default_preview_path)
+        preview_url = None
+        if has_preview:
+            preview_url = f"{base_url}/previews/{f.default_preview_path}"
+
         out.append(
             MyFileItem(
                 file_id=f.id,
                 original_filename=f.original_filename,
-                direct_link=f"{base_url}/uploads/{f.storage_data.get('path')}",
+                direct_link=direct_link,
+                has_preview=has_preview,
+                preview_url=preview_url,
             )
         )
     return out
@@ -155,3 +164,4 @@ def get_bulk_result(
         raise HTTPException(status_code=404, detail="Not found")
 
     return FileResponse(path, filename=fname, media_type="text/plain")
+

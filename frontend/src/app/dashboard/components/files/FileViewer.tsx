@@ -31,6 +31,10 @@ export interface RemoteFile {
   file_id: number;
   original_filename: string | null;
   direct_link: string;
+
+  // NEW fields for preview
+  has_preview?: boolean;
+  preview_url?: string;
 }
 
 interface Props {
@@ -236,6 +240,8 @@ export default function FileViewer({
       if (!selected) setSel(new Set<number>([file.file_id]));
     };
 
+    const isDownloading = downloadingId === file.file_id;
+
     return (
       <div
         ref={divRef}
@@ -250,15 +256,31 @@ export default function FileViewer({
           selected && "ring-2 ring-theme-500",
         )}
       >
-        {downloadingId === file.file_id ? (
-          <FiLoader className="w-6 h-6 animate-spin text-theme-700 dark:text-theme-300" />
-        ) : (
-          <Icon className="w-6 h-6 text-theme-700 dark:text-theme-300" />
-        )}
+        {(() => {
+          if (isDownloading) {
+            return <FiLoader className="w-6 h-6 animate-spin text-theme-700 dark:text-theme-300" />;
+          }
+          if (file.has_preview && file.preview_url) {
+            // show <img> if has_preview
+            return (
+              <img
+                src={absolute(file.preview_url)}
+                alt="Preview"
+                className="h-12 w-12 object-cover rounded-md"
+              />
+            );
+          }
+          // fallback icon
+          return <Icon className="w-6 h-6 text-theme-700 dark:text-theme-300" />;
+        })()}
+
         <p className="text-xs text-center leading-tight break-all line-clamp-2 max-h-8 overflow-hidden">
           {shortenFilename(file.original_filename || `file_${file.file_id}`)}
         </p>
-        {selected && <div className="absolute top-1 right-1 w-2 h-2 rounded-full bg-theme-500" />}
+
+        {selected && (
+          <div className="absolute top-1 right-1 w-2 h-2 rounded-full bg-theme-500" />
+        )}
       </div>
     );
   };

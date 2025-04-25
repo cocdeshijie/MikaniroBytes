@@ -261,6 +261,9 @@ def delete_group(
     }
 
 
+# ─────────────────────────────────────────────────────────────────────
+# Return all files owned by members of a given group, with preview info
+# ─────────────────────────────────────────────────────────────────────
 @router.get("/groups/{group_id}/files", response_model=List[MyFileItem])
 def list_group_files(
     group_id: int,
@@ -269,7 +272,7 @@ def list_group_files(
 ):
     """
     Return all files owned by members of a given group.
-    SUPER_ADMIN only.
+    SUPER_ADMIN only. Includes preview data.
     """
     ensure_superadmin(current_user)
 
@@ -283,11 +286,18 @@ def list_group_files(
 
     out = []
     for f in rows:
+        has_preview = bool(f.has_preview and f.default_preview_path)
+        preview_url = None
+        if has_preview:
+            preview_url = f"/previews/{f.default_preview_path}"
         out.append(
             MyFileItem(
                 file_id=f.id,
                 original_filename=f.original_filename,
                 direct_link=f"/uploads/{f.storage_data.get('path')}",
+                has_preview=has_preview,
+                preview_url=preview_url,
             )
         )
     return out
+
