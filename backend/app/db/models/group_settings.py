@@ -11,7 +11,7 @@ class GroupSettings(Base):
     id = Column(Integer, primary_key=True)
     group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
 
-    # Stored as simple JSON list.  Using default=list avoids the
+    # Stored as simple JSON list. Using default=list avoids the
     # “mutable default” foot‑gun when someone mutates the list in place.
     allowed_extensions = Column(SQLiteJSON, default=list)
 
