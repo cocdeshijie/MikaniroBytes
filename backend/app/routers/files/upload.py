@@ -15,9 +15,8 @@ from app.db.models.system_settings import SystemSettings
 from app.db.models.storage_enums import FileType
 from app.dependencies.auth import get_current_user, get_optional_user
 
-from .helpers import store_new_file, store_file_from_archive
-from app.utils.image import is_image_filename
-from app.utils.preview import generate_preview_in_background
+from .helpers import store_new_file, store_file_from_archive, guess_file_type_by_extension
+from app.utils.preview import generate_preview_in_background, PREVIEW_GENERATORS
 
 UPLOAD_DIR = "uploads"
 router = APIRouter()
@@ -71,15 +70,15 @@ def upload_file(
         settings=settings,
     )
 
-    # If it's recognized as an image, set file_type and schedule preview
-    if is_image_filename(db_file.original_filename or ""):
-        db_file.file_type = FileType.IMAGE
-        db.add(db_file)
-        db.commit()
+    ftype = guess_file_type_by_extension(db_file.original_filename or "")
+    db_file.file_type = ftype
+    db.add(db_file)
+    db.commit()
 
+    # If it's recognized as an image, set file_type and schedule preview
+    if ftype in PREVIEW_GENERATORS:
         if background_tasks is None:
             raise HTTPException(status_code=500, detail="BackgroundTasks not available")
-
         background_tasks.add_task(generate_preview_in_background, db_file.id)
 
     base_url = f"{request.url.scheme}://{request.url.netloc}"
@@ -143,11 +142,13 @@ async def bulk_upload(
                 archive_path=member_name,
                 owner_id=current_user.id
             )
+            # guess file type
+            ftype = guess_file_type_by_extension(new_file.original_filename or "")
+            new_file.file_type = ftype
+            db.add(new_file)
+            db.commit()
             # If recognized as image => mark as IMAGE + queue preview
-            if is_image_filename(new_file.original_filename):
-                new_file.file_type = FileType.IMAGE
-                db.add(new_file)
-                db.commit()
+            if ftype in PREVIEW_GENERATORS:
                 background_tasks.add_task(generate_preview_in_background, new_file.id)
 
             ok_count += 1

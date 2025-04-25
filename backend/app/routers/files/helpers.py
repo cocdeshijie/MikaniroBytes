@@ -17,6 +17,18 @@ from app.db.models.system_settings import SystemSettings
 UPLOAD_DIR = "uploads"
 
 
+def guess_file_type_by_extension(filename: str) -> FileType:
+    """
+    Very naive extension-based detection.
+    e.g. ".jpg" => FileType.IMAGE
+    Otherwise FileType.BASE
+    """
+    ext = filename.rsplit(".", 1)[-1].lower()
+    if ext in ["jpg", "jpeg", "png", "gif", "bmp", "webp"]:
+        return FileType.IMAGE
+    return FileType.BASE
+
+
 def render_path_template(template: str, now: datetime) -> str:
     """
     Render {Y}, {m}, {d}, {H}, {M}, {S} tokens in *template* using *now*.
