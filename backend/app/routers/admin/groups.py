@@ -22,7 +22,9 @@ from .helpers import (
 router = APIRouter()
 
 
-# Pydantic models
+# ─────────────────────────────────────────────────────────────────────
+#  Pydantic models
+# ─────────────────────────────────────────────────────────────────────
 class GroupCreate(BaseModel):
     name: str
     allowed_extensions: List[str] | None = None
@@ -50,6 +52,9 @@ class GroupUpdate(BaseModel):
     max_storage_size: int | None = None
 
 
+# ─────────────────────────────────────────────────────────────────────
+#  List groups
+# ─────────────────────────────────────────────────────────────────────
 @router.get("/groups", response_model=List[GroupRead])
 def list_groups(
     db: Session = Depends(get_db),
@@ -90,6 +95,9 @@ def list_groups(
     return out
 
 
+# ─────────────────────────────────────────────────────────────────────
+#  Create group
+# ─────────────────────────────────────────────────────────────────────
 @router.post("/groups", response_model=GroupRead)
 def create_group(
     payload: GroupCreate,
@@ -99,6 +107,9 @@ def create_group(
     """
     Create a new group.
     Reserved group names: SUPER_ADMIN, GUEST
+
+    If max_file_size / max_storage_size is None => unlimited.
+    If allowed_extensions is None or empty => no restriction on extensions.
     """
     ensure_superadmin(current_user)
 
@@ -108,14 +119,29 @@ def create_group(
         raise HTTPException(status_code=400, detail="Group already exists.")
 
     grp = Group(name=payload.name)
+
+    # If user left allowed_extensions blank => default to []
+    exts = payload.allowed_extensions or []
+
     grp.settings = GroupSettings(
-        allowed_extensions=payload.allowed_extensions or [],
-        max_file_size=payload.max_file_size or 10_000_000,
-        max_storage_size=payload.max_storage_size,
+        allowed_extensions=exts,
+        max_file_size=payload.max_file_size,       # None => unlimited
+        max_storage_size=payload.max_storage_size, # None => unlimited
     )
     db.add(grp)
     db.commit()
     db.refresh(grp)
+
+    # Recompute aggregated file info
+    cnt, bytes_ = (
+        db.query(
+            func.count(File.id),
+            func.coalesce(func.sum(File.size), 0),
+        )
+        .join(User, User.id == File.user_id)
+        .filter(User.group_id == grp.id)
+        .first()
+    )
 
     return GroupRead(
         id=grp.id,
@@ -123,11 +149,14 @@ def create_group(
         allowed_extensions=grp.settings.allowed_extensions,
         max_file_size=grp.settings.max_file_size,
         max_storage_size=grp.settings.max_storage_size,
-        file_count=0,
-        storage_bytes=0,
+        file_count=cnt,
+        storage_bytes=bytes_,
     )
 
 
+# ─────────────────────────────────────────────────────────────────────
+#  Update group
+# ─────────────────────────────────────────────────────────────────────
 @router.put("/groups/{group_id}", response_model=GroupRead)
 def update_group(
     group_id: int,
@@ -138,6 +167,10 @@ def update_group(
     """
     Update group name or settings.
     Built-in groups (SUPER_ADMIN, GUEST) cannot be renamed or deleted.
+
+    • If user passes null => store None (unlimited).
+    • If user omits the field => keep existing.
+    • If user provides a new non-null value => update it.
     """
     ensure_superadmin(current_user)
 
@@ -146,7 +179,7 @@ def update_group(
         raise HTTPException(status_code=404, detail="Group not found.")
 
     # Renaming logic
-    if payload.name and payload.name != grp.name:
+    if payload.name is not None and payload.name != grp.name:
         if grp.name in IMMUTABLE_GROUPS:
             raise HTTPException(status_code=400, detail="Cannot rename built‑in group.")
         if payload.name in IMMUTABLE_GROUPS:
@@ -158,11 +191,18 @@ def update_group(
 
     # Update settings
     sett = grp.settings or GroupSettings(group_id=grp.id)
-    if payload.allowed_extensions is not None:
-        sett.allowed_extensions = payload.allowed_extensions
-    if payload.max_file_size is not None:
+
+    # We check each field's presence
+    p_dict = payload.dict(exclude_unset=True)
+
+    if "allowed_extensions" in p_dict:
+        sett.allowed_extensions = payload.allowed_extensions or []
+
+    if "max_file_size" in p_dict:
+        # If user passed null => None (unlimited)
         sett.max_file_size = payload.max_file_size
-    if payload.max_storage_size is not None:
+
+    if "max_storage_size" in p_dict:
         sett.max_storage_size = payload.max_storage_size
 
     db.add_all([grp, sett])
@@ -191,6 +231,9 @@ def update_group(
     )
 
 
+# ─────────────────────────────────────────────────────────────────────
+#  Delete group
+# ─────────────────────────────────────────────────────────────────────
 @router.delete("/groups/{group_id}")
 def delete_group(
     group_id: int,
