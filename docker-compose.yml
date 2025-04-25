@@ -19,7 +19,6 @@ services:
       - db
     ports:
       - "8000:8000"
-    # 1) Provide env vars so it uses MySQL
     environment:
       - DB_ENGINE=mysql
       - DB_HOST=db
@@ -27,22 +26,18 @@ services:
       - DB_USER=myuser
       - DB_PASS=mypassword
       - DB_NAME=mikanirobytes
-    # If needed, also pass any other environment variables
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
 
   frontend:
     build: ./frontend
     container_name: MikaniroBytes_frontend
-    # Expose frontend port 3000 on localhost:3000
-    ports:
-      - "3000:3000"
-    # The frontend depends on backend existing before starting
     depends_on:
       - backend
-    # Environment variables so Next can talk to the backend inside Docker
+    ports:
+      - "3000:3000"
     environment:
-      # Inside Docker, the backend is accessible at http://backend:8000
-      # So we define that for your Next.js code:
       - NEXT_PUBLIC_BACKEND_URL=http://backend:8000
-    # Start the Next.js production server
     command: npm run start
+
+volumes:
+  db_data:
