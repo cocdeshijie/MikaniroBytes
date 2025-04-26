@@ -125,7 +125,11 @@ export default function FileViewerContainer({
     (id: number, additive: boolean) =>
       setSel((prev) => {
         const next = new Set<number>(additive ? prev : []);
-        next.has(id) ? next.delete(id) : next.add(id);
+        if (next.has(id)) {
+          next.delete(id);
+        } else {
+          next.add(id);
+        }
         return next;
       }),
     [setSel],
@@ -215,6 +219,8 @@ export default function FileViewerContainer({
     setFiles,
     setTotal,
     setPage,
+    setLoading,
+    setErr,
   ]);
 
   /* ---------------------------------------------------------- */
