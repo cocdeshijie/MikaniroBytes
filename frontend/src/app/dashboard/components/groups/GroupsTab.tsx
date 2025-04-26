@@ -42,14 +42,6 @@ export default function GroupsTab() {
   const [loading, setLoading] = useAtom(loadingA);
   const [error, setError]     = useAtom(errorA);
 
-  /* ---------- first fetch ---------- */
-  useEffect(() => {
-    // If no token or we've already fetched => skip
-    if (!token || fetched) return;
-    void fetchGroups();
-    setFetched(true);
-  }, [token, fetched, setFetched]);
-
   const fetchGroups = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -65,6 +57,14 @@ export default function GroupsTab() {
       setLoading(false);
     }
   }, [token, setGroups, setLoading, setError]);
+
+  /* ---------- first fetch ---------- */
+  useEffect(() => {
+    // If no token or we've already fetched => skip
+    if (!token || fetched) return;
+    void fetchGroups();
+    setFetched(true);
+  }, [token, fetched, setFetched, fetchGroups]);
 
   /* helpers to mutate list locally */
   const add = (g: GroupItem) => setGroups((p) => [...p, g]);
