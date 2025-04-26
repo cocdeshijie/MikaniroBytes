@@ -28,7 +28,6 @@ services:
       DB_NAME:     mikanirobytes
       DB_USER:     mikanirobytes
       DB_PASSWORD: mikanirobytes
-      SECRET_KEY:  please-change-me-now
     depends_on:
       mysql:
         condition: service_healthy
