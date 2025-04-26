@@ -1,5 +1,5 @@
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -50,6 +50,21 @@ class GroupUpdate(BaseModel):
     allowed_extensions: List[str] | None = None
     max_file_size: int | None = None
     max_storage_size: int | None = None
+
+
+class MyFileItem(BaseModel):
+    file_id: int
+    original_filename: Optional[str] = None
+    direct_link: str
+    has_preview: bool
+    preview_url: Optional[str] = None
+
+
+class PaginatedFiles(BaseModel):
+    items: List[MyFileItem]
+    total: int
+    page: int
+    page_size: int
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -307,9 +322,12 @@ def delete_group(
 # ─────────────────────────────────────────────────────────────────────
 # Return all files owned by members of a given group, with preview info
 # ─────────────────────────────────────────────────────────────────────
-@router.get("/groups/{group_id}/files", response_model=List[MyFileItem])
+@router.get("/groups/{group_id}/files", response_model=PaginatedFiles)
 def list_group_files(
     group_id: int,
+    request: Request,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=200),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -319,28 +337,42 @@ def list_group_files(
     """
     ensure_superadmin(current_user)
 
+    base_url = f"{request.url.scheme}://{request.url.netloc}"
+
+    subq = (
+        db.query(User.id)
+        .filter(User.group_id == group_id)
+        .subquery()
+    )
+
+    total = db.query(func.count(File.id)).filter(File.user_id.in_(subq)).scalar()
+
     rows = (
         db.query(File)
-        .join(User, User.id == File.user_id)
-        .filter(User.group_id == group_id)
+        .filter(File.user_id.in_(subq))
         .order_by(File.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
         .all()
     )
 
-    out = []
+    items = []
     for f in rows:
         has_preview = bool(f.has_preview and f.default_preview_path)
-        preview_url = None
-        if has_preview:
-            preview_url = f"/previews/{f.default_preview_path}"
-        out.append(
+        items.append(
             MyFileItem(
                 file_id=f.id,
                 original_filename=f.original_filename,
                 direct_link=f"/{f.storage_data.get('path')}",
                 has_preview=has_preview,
-                preview_url=preview_url,
+                preview_url=f"/previews/{f.default_preview_path}" if has_preview else None,
             )
         )
-    return out
+
+    return PaginatedFiles(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
 

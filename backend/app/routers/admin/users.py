@@ -1,5 +1,6 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -14,7 +15,7 @@ from .helpers import (
     IMMUTABLE_GROUPS,
     ensure_superadmin,
     delete_physical_files,
-    get_guest_user
+    get_guest_user,
 )
 
 
@@ -36,6 +37,21 @@ class UserRead(BaseModel):
 
 class UserGroupUpdate(BaseModel):
     group_id: int
+
+
+class MyFileItem(BaseModel):
+    file_id: int
+    original_filename: Optional[str] = None
+    direct_link: str
+    has_preview: bool
+    preview_url: Optional[str] = None
+
+
+class PaginatedFiles(BaseModel):
+    items: List[MyFileItem]
+    total: int
+    page: int
+    page_size: int
 
 
 @router.get("/users", response_model=List[UserRead])
@@ -173,9 +189,12 @@ def delete_user(
 # ─────────────────────────────────────────────────────────────────────
 # NEW: Provide preview info in "list_user_files"
 # ─────────────────────────────────────────────────────────────────────
-@router.get("/users/{user_id}/files", response_model=List[dict])
+@router.get("/users/{user_id}/files", response_model=PaginatedFiles)
 def list_user_files(
     user_id: int,
+    request: Request,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=200),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -185,26 +204,35 @@ def list_user_files(
     """
     ensure_superadmin(current_user)
 
+    base_url = f"{request.url.scheme}://{request.url.netloc}"
+
+    total = db.query(func.count(File.id)).filter(File.user_id == user_id).scalar()
+
     rows = (
         db.query(File)
         .filter(File.user_id == user_id)
         .order_by(File.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
         .all()
     )
 
-    out = []
+    items = []
     for f in rows:
         has_preview = bool(f.has_preview and f.default_preview_path)
-        preview_url = None
-        if has_preview:
-            preview_url = f"/previews/{f.default_preview_path}"
-        out.append(
-            {
-                "file_id": f.id,
-                "original_filename": f.original_filename,
-                "direct_link": f"/{f.storage_data.get('path')}",
-                "has_preview": has_preview,
-                "preview_url": preview_url,
-            }
+        items.append(
+            MyFileItem(
+                file_id=f.id,
+                original_filename=f.original_filename,
+                direct_link=f"/{f.storage_data.get('path')}",
+                has_preview=has_preview,
+                preview_url=f"/previews/{f.default_preview_path}" if has_preview else None,
+            )
         )
-    return out
+
+    return PaginatedFiles(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
