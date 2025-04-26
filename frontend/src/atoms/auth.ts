@@ -8,9 +8,6 @@ export interface UserInfo {
   groupName?: string;
 }
 
-/* ---------- session ---------- */
-const STORAGE_KEY = "mb_token";
-
 /**
  * Hold the JWT token while the tab is open.
  * Initial value is synchronised with localStorage

@@ -42,7 +42,7 @@ export default function ProfilePage() {
 
   const [, setUserInfo]          = useAtom(userInfoAtom);
   const [sessions, setSessions]  = useAtom(sessionsAtom);
-  const [loading,  setLoading]   = useAtom(loadingAtom);
+  const [,  setLoading]   = useAtom(loadingAtom);
   const [errorMsg, setError]     = useAtom(errorAtom);
   const [fetched,  setFetched]   = useAtom(fetchedAtom);
 

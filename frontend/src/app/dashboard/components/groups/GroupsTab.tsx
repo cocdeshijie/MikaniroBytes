@@ -1,7 +1,7 @@
 "use client";
 
 import { atom, useAtom } from "jotai";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { FiLoader, FiTrash } from "react-icons/fi";
 import { cn } from "@/utils/cn";
@@ -50,7 +50,7 @@ export default function GroupsTab() {
     setFetched(true);
   }, [token, fetched, setFetched]);
 
-  async function fetchGroups() {
+  const fetchGroups = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
@@ -64,7 +64,7 @@ export default function GroupsTab() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [token, setGroups, setLoading, setError]);
 
   /* helpers to mutate list locally */
   const add = (g: GroupItem) => setGroups((p) => [...p, g]);
