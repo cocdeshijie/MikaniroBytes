@@ -2,8 +2,7 @@
 
 import { FormEvent, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { signIn } from "next-auth/react";
-import { useAtom, atom } from "jotai";
+import { atom, useAtom } from "jotai";
 import * as Form from "@radix-ui/react-form";
 import { cn } from "@/utils/cn";
 import { api } from "@/lib/api";
@@ -40,20 +39,21 @@ export default function RegisterPage() {
     e.preventDefault();
     setError("");
     try {
+      // 1) call /auth/register
       await api("/auth/register", {
         method: "POST",
         json: { username, email, password },
       });
 
-      const login = await signIn("credentials", {
-        username,
-        password,
-        redirect: false,
+      // 2) after successful registration, optionally you can log them in automatically
+      //    using your custom login() method or redirect to login page, etc.
+      push({
+        title: "Registration success",
+        variant: "success"
       });
-      if (login?.error) throw new Error(login.error);
-
-      router.push("/profile");
-    } catch (err) { // Remove ': any' type annotation
+      // for now, let's send them to /auth/login
+      router.push("/auth/login");
+    } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Registration error";
       setError(errorMessage);
       push({

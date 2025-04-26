@@ -1,12 +1,15 @@
 "use client";
 
-import { useSession } from "next-auth/react";
 import { NEXT_PUBLIC_BACKEND_URL } from "@/lib/env";
 import FileViewer from "./files/FileViewer";
 import BulkUpload from "./files/BulkUpload";
+import { useAuth } from "@/lib/auth";
 
+/**
+ * Replaces the old next-auth usage with your custom Jotai-based token.
+ */
 export default function MyFileTab() {
-  const { data: session } = useSession();
+  const { token } = useAuth();
 
   return (
     <>
@@ -14,7 +17,7 @@ export default function MyFileTab() {
       <FileViewer
         title="My Files"
         fetchEndpoint={`${NEXT_PUBLIC_BACKEND_URL}/files/my-files`}
-        sessionToken={session?.accessToken}
+        sessionToken={token ?? undefined}
         readOnly={false}
       />
 

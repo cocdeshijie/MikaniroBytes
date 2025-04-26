@@ -2,18 +2,19 @@
 
 import { FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { signIn } from "next-auth/react";
-import { useAtom, atom } from "jotai";
+import { useToast } from "@/lib/toast";
+import { atom, useAtom } from "jotai";
 import * as Form from "@radix-ui/react-form";
 import { cn } from "@/utils/cn";
-import { useToast } from "@/lib/toast";
+import { useAuth } from "@/lib/auth";
 
 const usernameAtom = atom("");
 const passwordAtom = atom("");
 
 export default function LoginPage() {
-  const router   = useRouter();
+  const router = useRouter();
   const { push } = useToast();
+  const { login } = useAuth(); // Jotai-based auth
 
   const [username, setUser] = useAtom(usernameAtom);
   const [password, setPass] = useAtom(passwordAtom);
@@ -21,23 +22,17 @@ export default function LoginPage() {
   async function handleLogin(e: FormEvent) {
     e.preventDefault();
     try {
-      const res = await signIn("credentials", {
-        username,
-        password,
-        redirect: false,
-      });
-
-      if (res?.error) {
-        push({ title: "Login Failed", description: res.error, variant: "error" });
-        return;
-      }
+      // 1) call our new login method
+      await login(username, password);
+      // 2) success => show toast and go to profile or wherever
       push({ title: "Welcome back!", variant: "success" });
       router.push("/profile");
     } catch (err) {
+      const msg = err instanceof Error ? err.message : "Login failed.";
       push({
         title: "Login Error",
-        description: err instanceof Error ? err.message : "Login failed.",
-        variant: "error"
+        description: msg,
+        variant: "error",
       });
     }
   }

@@ -9,7 +9,6 @@ import {
 import { filesNeedsRefreshAtom } from "@/atoms/fileAtoms";
 import { cn } from "@/utils/cn";
 import { useToast } from "@/providers/toast-provider";
-import { useSession } from "next-auth/react";
 import {
   FormEvent,
   DragEvent,
@@ -20,6 +19,7 @@ import {
 import { atom, useAtom } from "jotai";
 import UploadItem from "@/components/UploadItem";
 import { uploadFile } from "@/lib/files";
+import { useAuth } from "@/lib/auth";
 
 /* ------------------------------------------------------------------ */
 /*                       local derived atoms                          */
@@ -38,7 +38,7 @@ const parseUploadError = (raw: string | null): string =>
 /*                             COMPONENT                              */
 /* ------------------------------------------------------------------ */
 export default function Home() {
-  const { data: session } = useSession();
+  const { token } = useAuth();   // Replaces useSession
   const { push } = useToast();
 
   const [isDragging, setIsDragging] = useAtom(isDraggingAtom);
@@ -121,8 +121,9 @@ export default function Home() {
       )
     );
 
+    // Use "token ?? ''" to pass a guaranteed string
     uploadFile(task.file, {
-      token: session?.accessToken,
+      token: token ?? "",
       onProgress: (pct) =>
         setTasks((prev) =>
           prev.map((t) =>
@@ -142,9 +143,9 @@ export default function Home() {
         setUploadedItems((prev) => [result, ...prev]);
         setNeedsRefresh(true);
       })
-      .catch((e) => {
+      .catch((err) => {
         // failure => mark error, show toast
-        const msg = parseUploadError(e?.message ?? null);
+        const msg = parseUploadError(err?.message ?? null);
         setTasks((prev) =>
           prev.map((t) =>
             t.id === task.id ? { ...t, status: "error", error: msg } : t

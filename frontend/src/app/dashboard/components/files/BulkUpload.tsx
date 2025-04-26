@@ -1,13 +1,13 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useMemo } from "react";
-import { useSession } from "next-auth/react";
 import { FiUpload, FiCheck, FiX } from "react-icons/fi";
 import { cn } from "@/utils/cn";
 import { useToast } from "@/lib/toast";
 import { filesNeedsRefreshAtom } from "@/atoms/fileAtoms";
 import { atom, useAtom } from "jotai";
 import { bulkUpload } from "@/lib/files";
+import { useAuth } from "@/lib/auth";
 
 /* ─────────── local jotai atoms ─────────── */
 const phaseA     = () => atom<"idle" | "selected" | "uploading" | "done" | "error">("idle");
@@ -18,7 +18,7 @@ const infoLineA  = () => atom("");
 const errorMsgA  = () => atom("");
 
 export default function BulkUpload() {
-  const { data: session } = useSession();
+  const { token } = useAuth();
   const { push } = useToast();
 
   const [, setNeedsRefresh] = useAtom(filesNeedsRefreshAtom);
@@ -32,7 +32,9 @@ export default function BulkUpload() {
 
   const reset = () => {
     if (txtUrl) URL.revokeObjectURL(txtUrl);
-    setTxtUrl(null); setErr(""); setInfo("");
+    setTxtUrl(null);
+    setErr("");
+    setInfo("");
   };
 
   const onFileChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -49,11 +51,16 @@ export default function BulkUpload() {
     e.preventDefault();
     if (!file) return;
 
-    setPhase("uploading"); setProgress(0); setErr("");
+    setPhase("uploading");
+    setProgress(0);
+    setErr("");
 
     try {
+      // Pass your Jotai-based token => fallback to undefined if needed
+      const realToken = token ?? undefined;
+
       const res = await bulkUpload(file, {
-        token: session?.accessToken,
+        token: realToken,
         onProgress: setProgress,
       });
 
@@ -82,8 +89,8 @@ export default function BulkUpload() {
       setInfo(`${res.success}/${total} succeeded | ${failedNum} failed`);
       setPhase("done");
       push({ title: "Bulk upload finished", variant: "success" });
-    } catch (e) {
-      const errorMessage = e instanceof Error ? e.message : "Upload failed";
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Upload failed";
       setErr(errorMessage);
       setPhase("error");
       push({
@@ -100,7 +107,6 @@ export default function BulkUpload() {
   /* ------------------------------------------------------------------
    *                                UI
    * ------------------------------------------------------------------ */
-
   return (
     <div
       className={cn(

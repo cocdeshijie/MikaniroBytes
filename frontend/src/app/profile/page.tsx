@@ -5,109 +5,112 @@
 /* ------------------------------------------------------------------ */
 import { FormEvent, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
 import { atom, useAtom } from "jotai";
 import { cn } from "@/utils/cn";
 import { api } from "@/lib/api";
-import {
-  userInfoAtom,
-  sessionsAtom,
-  loadingAtom,
-  errorAtom,
-  SessionItem,
-  UserInfo,
-} from "@/atoms/auth";
 import { useToast } from "@/lib/toast";
+import { useAuth } from "@/lib/auth";
+import { userInfoAtom, type UserInfo  } from "@/atoms/auth";
 
 /* ------------------------------------------------------------------ */
-/*                       LOCAL (page-scoped) ATOMS                    */
+/*  Local-only atoms (they used to live in '@/atoms/auth')            */
 /* ------------------------------------------------------------------ */
-const oldPwA   = atom("");
-const newPwA   = atom("");
-const fetchedA = atom(false);
+interface SessionItem {
+  session_id: number;
+  token: string;
+  ip_address?: string;
+  client_name?: string;
+  created_at: string;
+  last_accessed: string;
+}
+
+const sessionsAtom  = atom<SessionItem[]>([]);
+const loadingAtom   = atom(false);
+const errorAtom     = atom("");
+const fetchedAtom   = atom(false);
+
+const oldPwA = atom("");
+const newPwA = atom("");
 
 /* ================================================================== */
 /*                             COMPONENT                              */
 /* ================================================================== */
+/* ================================================================== */
 export default function ProfilePage() {
-  const router                    = useRouter();
-  const { data: session, status } = useSession();
-  const { push }                  = useToast();
+  const router         = useRouter();
+  const { push }       = useToast();
+  const { isAuthenticated, token } = useAuth();
 
   const [userInfo, setUserInfo] = useAtom(userInfoAtom);
   const [sessions, setSessions] = useAtom(sessionsAtom);
-  const [, setLoading]   = useAtom(loadingAtom);
+  const [loading,  setLoading]  = useAtom(loadingAtom);
   const [errorMsg, setError]    = useAtom(errorAtom);
+  const [fetched,  setFetched]  = useAtom(fetchedAtom);
 
-  const [oldPw, setOldPw]       = useAtom(oldPwA);
-  const [newPw, setNewPw]       = useAtom(newPwA);
-  const [fetched, setFetched]   = useAtom(fetchedA);
+  const [oldPw, setOldPw] = useAtom(oldPwA);
+  const [newPw, setNewPw] = useAtom(newPwA);
 
-  /* ---------- redirect if unauthenticated ---------- */
+  /* ---------- redirect if not authenticated ---------- */
   useEffect(() => {
-    if (status === "unauthenticated") router.replace("/auth/login");
-  }, [status, router]);
+    if (!isAuthenticated) router.replace("/auth/login");
+  }, [isAuthenticated, router]);
 
-  /* ---------- first load: populate user + sessions -- */
+  /* ---------- first load: user info + sessions -------- */
   useEffect(() => {
-    if (status !== "authenticated" || !session || fetched) return;
+    if (!isAuthenticated || fetched) return;
 
-    /* Basic info already in the session (thanks to batch-2) */
-    const basic: UserInfo = {
-      id      : Number(session.user.id),
-      username: session.user.username,
-      email   : session.user.email ?? undefined,
-    };
-    setUserInfo(basic);
+    setLoading(true);
+    setError("");
 
-    /* Load active sessions from backend */
     (async () => {
-      setLoading(true);
-      setError("");
       try {
-        const list = await api<SessionItem[]>("/auth/sessions", {
-          token: session.accessToken,
+        const me = await api<{
+          id: number;
+          username: string;
+          email?: string;
+          group?: { name: string };
+        }>("/auth/me", { token });
+
+        setUserInfo({
+          id: me.id,
+          username: me.username,
+          email: me.email,
+          groupName: me.group?.name,
         });
+
+        const list = await api<SessionItem[]>("/auth/sessions", { token });
         setSessions(list);
-      } catch (e) {  // Remove ': any'
-        const errorMessage = e instanceof Error ? e.message : "Failed to load sessions";
-        setError(errorMessage);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to load data");
       } finally {
         setLoading(false);
         setFetched(true);
       }
     })();
-  }, [status, session, fetched, setUserInfo, setLoading, setError, setSessions, setFetched]);
+  }, [isAuthenticated, fetched, token, setLoading, setError, setUserInfo, setSessions, setFetched]);
+
 
   /* ------------------------------------------------------------------
    *                               HELPERS
    * ------------------------------------------------------------------ */
-  const revokeSession = async (sessionId: number) => {
+  const revokeSession = async (id: number) => {
     try {
-      await api(`/auth/sessions/${sessionId}`, {
-        method: "DELETE",
-        token: session?.accessToken,
-      });
-      setSessions((p) => p.filter((s) => s.session_id !== sessionId));
+      await api(`/auth/sessions/${id}`, { method: "DELETE", token });
+      setSessions((p) => p.filter((s) => s.session_id !== id));
       push({ title: "Session revoked", variant: "success" });
-    } catch (e) {  // Remove ': any'
-      const errorMessage = e instanceof Error ? e.message : "Revoke failed";
-      push({ title: "Revoke failed", description: errorMessage, variant: "error" });
+    } catch (e) {
+      push({ title: "Revoke failed", variant: "error" });
     }
   };
 
   const revokeAll = async () => {
     if (!confirm("Logout from all devices?")) return;
     try {
-      await api("/auth/logout-all", {
-        method: "POST",
-        token: session?.accessToken,
-      });
+      await api("/auth/logout-all", { method: "POST", token });
       setSessions([]);
       push({ title: "Logged out everywhere", variant: "success" });
-    } catch (e) {  // Remove ': any'
-      const errorMessage = e instanceof Error ? e.message : "Logout-all failed";
-      push({ title: "Logout-all failed", description: errorMessage, variant: "error" });
+    } catch (e) {
+      push({ title: "Logout-all failed", variant: "error" });
     }
   };
 
@@ -115,20 +118,18 @@ export default function ProfilePage() {
     e.preventDefault();
     try {
       await api("/auth/change-password", {
-        method : "POST",
-        token  : session?.accessToken,
-        json   : { old_password: oldPw, new_password: newPw },
+        method: "POST",
+        token,
+        json: { old_password: oldPw, new_password: newPw },
       });
       push({ title: "Password updated", variant: "success" });
-      setOldPw("");
-      setNewPw("");
-    } catch (e) {  // Remove ': any'
-      const errorMessage = e instanceof Error ? e.message : "Password change failed";
-      push({ title: "Password change failed", description: errorMessage, variant: "error" });
+      setOldPw(""); setNewPw("");
+    } catch (e) {
+      push({ title: "Password change failed", variant: "error" });
     }
   };
 
-  /* ---------- skeleton shown until both requests finish ---------- */
+  /* ---------- skeleton shown until requests finish ---------- */
   const Skeleton = useMemo(
     () => (
       <div className="space-y-6 md:grid md:grid-cols-12 md:gap-6 md:space-y-0 animate-pulse">
@@ -142,12 +143,13 @@ export default function ProfilePage() {
     [],
   );
 
-  /* ---------- early return overlays ---------- */
-  if (status === "loading")          return <FullPageMsg>Checking session…</FullPageMsg>;
-  if (status === "unauthenticated")  return <FullPageMsg>Redirecting…</FullPageMsg>;
+  /* ---------- if not auth, show a quick message or fallback ---------- */
+  if (!isAuthenticated) {
+    return <FullPageMsg>Redirecting…</FullPageMsg>;
+  }
 
   /* ------------------------------------------------------------------
-   *                         MAIN LAYOUT
+   *                          MAIN LAYOUT
    * ------------------------------------------------------------------ */
   return (
     <div className="min-h-screen bg-theme-50 dark:bg-theme-950">

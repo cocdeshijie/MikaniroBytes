@@ -11,26 +11,29 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { status, isAdmin } = useAuth();
-  const router                       = useRouter();
-  const pathname                     = usePathname();
+  const { isAuthenticated, userInfo } = useAuth();
+  const router = useRouter();
+  const pathname = usePathname();
 
-  /* redirect guests */
+  /* Simple admin check if you store groupName. */
+  const isAdmin = userInfo?.groupName === "SUPER_ADMIN";
+
   useEffect(() => {
-    if (status === "unauthenticated") router.replace("/auth/login");
-  }, [status, router]);
+    if (!isAuthenticated) {
+      router.replace("/auth/login");
+    }
+  }, [isAuthenticated, router]);
 
-  if (status === "loading" || status === "unauthenticated") {
+  if (!isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-theme-50 dark:bg-theme-950">
         <p className="text-lg text-theme-700 dark:text-theme-300">
-          {status === "loading" ? "Checking session…" : "Redirecting to login…"}
+          Checking session…
         </p>
       </div>
     );
   }
 
-  /* --------------------------- UI ---------------------------- */
   return (
     <div className="min-h-screen bg-theme-50 dark:bg-theme-950">
       {/* Header */}
@@ -78,8 +81,21 @@ export default function DashboardLayout({
               >
                 <div className="space-y-2">
                   <NavButton href="/dashboard/files" label="My Files" current={pathname} />
-                  {isAdmin && <NavButton href="/dashboard/groups"  label="Groups"  current={pathname} />}
-                  {isAdmin && <NavButton href="/dashboard/configs" label="Configs" current={pathname} />}
+                  {isAdmin && (
+                    <NavButton
+                      href="/dashboard/groups"
+                      label="Groups"
+                      current={pathname}
+                    />
+                  )}
+                  {isAdmin && (
+                    <NavButton
+                      href="/dashboard/configs"
+                      label="Configs"
+                      current={pathname}
+                    />
+                  )}
+                  {/* Add more links if needed */}
                 </div>
               </div>
             </nav>

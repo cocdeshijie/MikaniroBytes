@@ -1,25 +1,24 @@
 import { atom } from "jotai";
 
-/** Basic user info retrieved from /auth/me */
+/* ---------- minimal user-info shape ---------- */
 export interface UserInfo {
   id: number;
   username: string;
   email?: string;
+  groupName?: string;
 }
 
+/* ---------- session-level atoms -------------- */
 export const userInfoAtom = atom<UserInfo | null>(null);
 
-export interface SessionItem {
-  session_id: number;
-  token: string;
-  ip_address?: string;
-  client_name?: string;
-  created_at: string;
-  last_accessed: string;
-}
+/**
+ * Holds the backend JWT while the tab is open.
+ * – undefined  → logged out / not yet fetched
+ * – string     → valid token
+ *
+ * The actual persistence (localStorage) is handled in `useAuth()`.
+ */
+export const tokenAtom = atom<string | undefined>(undefined);
 
-export const sessionsAtom = atom<SessionItem[]>([]);
-
-export const loadingAtom = atom<boolean>(false);
-export const errorAtom = atom<string>("");
-
+/* handy derived flag */
+export const isAuthenticatedAtom = atom((get) => Boolean(get(tokenAtom)));

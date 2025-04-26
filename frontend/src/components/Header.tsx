@@ -2,14 +2,14 @@
 
 import React, { useEffect } from "react";
 import Link from "next/link";
-import { signOut, useSession } from "next-auth/react";
+import { atom, useAtom } from "jotai";
 import { useTheme } from "next-themes";
 import { BiMoon, BiSun, BiMenu, BiChevronDown } from "react-icons/bi";
 import * as Dialog from "@radix-ui/react-dialog";
-import { atom, useAtom } from "jotai";
 import { usePathname } from "next/navigation";
 import { cn } from "@/utils/cn";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 
 /* ────────────────────────────────────────────────────────────────── */
 /*  Atoms                                                             */
@@ -82,33 +82,20 @@ const Logo = () => {
 /* ────────────────────────────────────────────────────────────────── */
 const MobileNavDialog = () => {
   const [isOpen, setIsOpen] = useAtom(dialogOpenAtom);
-  const { data: session }   = useSession();
-  const pathname            = usePathname();
-  const [regEnabled]        = useAtom(regEnabledAtom);
+  const [regEnabled] = useAtom(regEnabledAtom);
+  const pathname = usePathname();
+  const { isAuthenticated, logout } = useAuth();
+
+  const navItems = [{ title: "Home", href: "/" }];
+  if (isAuthenticated) {
+    navItems.push({ title: "Dashboard", href: "/dashboard" });
+    navItems.push({ title: "Profile", href: "/profile" });
+  }
 
   const handleLogout = async () => {
-    if (session?.accessToken) {
-      /* uses api() – adds Authorization header for us */
-      try {
-        await api("/auth/logout", {
-          method: "POST",
-          token : session.accessToken,
-        });
-      } catch {
-        /* ignore – sign-out proceeds anyway */
-      }
-    }
-    await signOut();
+    await logout();
+    setIsOpen(false);
   };
-
-  /* show common routes */
-  const navItems = [{ title: "Home", href: "/" }];
-
-  /* auth-only routes */
-  if (session?.accessToken) {
-    navItems.push({ title: "Dashboard", href: "/dashboard" });
-    navItems.push({ title: "Profile",   href: "/profile"   });
-  }
 
   return (
     <Dialog.Root open={isOpen} onOpenChange={setIsOpen}>
@@ -146,7 +133,7 @@ const MobileNavDialog = () => {
             ))}
 
             {/* logout button (mobile) */}
-            {session?.accessToken && (
+            {isAuthenticated && (
               <button
                 onClick={handleLogout}
                 className={cn(
@@ -160,7 +147,7 @@ const MobileNavDialog = () => {
             )}
 
             {/* login / register for guests (mobile) */}
-            {!session?.accessToken && (
+            {!isAuthenticated && (
               <>
                 <Link
                   href="/auth/login"
@@ -199,10 +186,10 @@ const MobileNavDialog = () => {
 /*  Main Header Component                                             */
 /* ────────────────────────────────────────────────────────────────── */
 const Header = () => {
-  const [, setIsScrolled] = useAtom(scrollAtom);  // Only destructure the setter since isScrolled isn't used
+  const [, setIsScrolled] = useAtom(scrollAtom);
   const [regEnabled, setRegEnabled] = useAtom(regEnabledAtom);
-  const { data: session } = useSession();
   const { theme, setTheme } = useTheme();
+  const { isAuthenticated, logout } = useAuth();
   const pathname = usePathname();
 
   /* track scroll shadow */
@@ -220,32 +207,24 @@ const Header = () => {
     (async () => {
       try {
         const data = await api<{ enabled: boolean }>("/auth/registration-enabled");
-        setRegEnabled(Boolean(data.enabled));
-      } catch {
-        setRegEnabled(true); // network failure → assume enabled
-      }
+      setRegEnabled(Boolean(data.enabled));
+    } catch {
+      setRegEnabled(true); // fallback
+    }
     })();
   }, [setRegEnabled]);
 
   const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
 
   const handleLogout = async () => {
-    if (session?.accessToken) {
-      try {
-        await api("/auth/logout", {
-          method: "POST",
-          token : session.accessToken,
-        });
-      } catch {/* ignore */}
-    }
-    await signOut();
+    await logout();
   };
 
   /* desktop centre nav */
   const navItems = [{ title: "Home", href: "/" }];
-  if (session?.accessToken) {
+  if (isAuthenticated) {
     navItems.push({ title: "Dashboard", href: "/dashboard" });
-    navItems.push({ title: "Profile",   href: "/profile" });
+    navItems.push({ title: "Profile", href: "/profile" });
   }
 
   return (
@@ -301,7 +280,7 @@ const Header = () => {
           {theme === "dark" ? <BiSun size={20} /> : <BiMoon size={20} />}
         </button>
 
-        {session?.accessToken ? (
+        {isAuthenticated  ? (
           /* logged-in desktop buttons */
           <div className="hidden md:block">
             <button

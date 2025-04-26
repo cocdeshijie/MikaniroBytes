@@ -2,7 +2,6 @@
 
 import { atom, useAtom } from "jotai";
 import { useEffect, useState } from "react";
-import { useSession } from "next-auth/react";
 import { BiTrash } from "react-icons/bi";
 import { FiLoader } from "react-icons/fi";
 import { cn } from "@/utils/cn";
@@ -18,6 +17,7 @@ import {
   deleteUser as apiDeleteUser,
   UserItem,
 } from "@/lib/admin";
+import { useAuth } from "@/lib/auth";
 
 /* ------------------------------------------------------------------ */
 /*                             ATOMS                                  */
@@ -38,31 +38,33 @@ const isSuperAdmin = (u: UserItem) => u.group?.name === "SUPER_ADMIN";
 /*                             COMPONENT                              */
 /* ================================================================== */
 export default function UsersTab() {
-  const { data: session } = useSession();
-  const { push }          = useToast();
+  const { token } = useAuth();                 // ← replaces useSession
+  const { push }  = useToast();
 
-  const [loading, setLoading]   = useAtom(loadingAtom);
-  const [errorMsg, setError]    = useAtom(errorMsgAtom);
-  const [users, setUsers]       = useAtom(usersAtom);
-  const [groups, setGroups]     = useAtom(groupsAtom);
+  const [loading, setLoading]    = useAtom(loadingAtom);
+  const [errorMsg, setError]     = useAtom(errorMsgAtom);
+  const [users, setUsers]        = useAtom(usersAtom);
+  const [groups, setGroups]      = useAtom(groupsAtom);
   const [hasFetched, setFetched] = useAtom(hasFetchedAtom);
 
   /* ---------- first fetch ---------- */
   useEffect(() => {
-    if (!session?.accessToken || hasFetched) return;
+    if (!token || hasFetched) return;
     void fetchAll();
     setFetched(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.accessToken, hasFetched]);
+  }, [token, hasFetched]);
 
   async function fetchAll() {
     setLoading(true);  setError("");
     try {
-      setUsers(await getUsers(session?.accessToken));
+      setUsers(await getUsers(token));
 
-      const g = await getGroups(session?.accessToken);
-      setGroups(g.filter((x) => !EXCLUDE.includes(x.name)).map(({ id, name }) => ({ id, name })));
-    } catch (e) { // Remove ': any'
+      const g = await getGroups(token);
+      setGroups(
+        g.filter((x) => !EXCLUDE.includes(x.name)).map(({ id, name }) => ({ id, name })),
+      );
+    } catch (e) {
       const errorMessage = e instanceof Error ? e.message : "Load error";
       setError(errorMessage);
     } finally {
@@ -74,10 +76,10 @@ export default function UsersTab() {
   async function handleGroupChange(userId: number, newGroupId: number) {
     setLoading(true); setError("");
     try {
-      const updated = await updateUserGroup(userId, newGroupId, session?.accessToken);
+      const updated = await updateUserGroup(userId, newGroupId, token);
       setUsers((p) => p.map((u) => (u.id === updated.id ? updated : u)));
       push({ title: "Group updated", variant: "success" });
-    } catch (e) { // Remove ': any'
+    } catch (e) {
       const errorMessage = e instanceof Error ? e.message : "Update failed";
       setError(errorMessage);
       push({ title: "Update failed", variant: "error" });
@@ -89,10 +91,10 @@ export default function UsersTab() {
   async function deleteUser(user: UserItem, deleteFiles: boolean) {
     setLoading(true); setError("");
     try {
-      await apiDeleteUser(user.id, deleteFiles, session?.accessToken);
+      await apiDeleteUser(user.id, deleteFiles, token);
       setUsers((p) => p.filter((u) => u.id !== user.id));
       push({ title: "User deleted", variant: "success" });
-    } catch (e) { // Remove ': any'
+    } catch (e) {
       const errorMessage = e instanceof Error ? e.message : "Delete failed";
       setError(errorMessage);
       push({ title: "Delete failed", variant: "error" });
@@ -150,10 +152,9 @@ export default function UsersTab() {
               <ViewUserFilesDialog
                 userId={u.id}
                 username={u.username}
-                sessionToken={session?.accessToken ?? ""}
+                sessionToken={token ?? ""}
               />
 
-              {/* group select (skip SUPER_ADMIN) */}
               {isSuperAdmin(u) ? (
                 <span className="text-sm">{u.group?.name}</span>
               ) : (
@@ -165,7 +166,6 @@ export default function UsersTab() {
                 />
               )}
 
-              {/* delete */}
               {!isSuperAdmin(u) && (
                 <DeleteUserButton user={u} onDelete={deleteUser} />
               )}

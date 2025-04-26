@@ -2,7 +2,6 @@
 
 import { atom, useAtom } from "jotai";
 import { useEffect, useMemo, useState } from "react";
-import { useSession } from "next-auth/react";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { FiLoader, FiTrash } from "react-icons/fi";
 import { cn } from "@/utils/cn";
@@ -17,6 +16,7 @@ import {
   getGroups,
   deleteGroup as apiDeleteGroup,
 } from "@/lib/admin";
+import { useAuth } from "@/lib/auth";
 
 /* ------------------------------------------------------------------ */
 /*                         LOCAL ATOMS                                */
@@ -34,7 +34,7 @@ const IMMUTABLE = ["SUPER_ADMIN", "GUEST"];
 
 /* ================================================================== */
 export default function GroupsTab() {
-  const { data: session } = useSession();
+  const { token } = useAuth();
   const { groupsAtom, fetchedA, loadingA, errorA } = useLocalAtoms();
 
   const [groups, setGroups]   = useAtom(groupsAtom);
@@ -44,18 +44,22 @@ export default function GroupsTab() {
 
   /* ---------- first fetch ---------- */
   useEffect(() => {
-    if (!session?.accessToken || fetched) return;
+    // If no token or we've already fetched => skip
+    if (!token || fetched) return;
     void fetchGroups();
     setFetched(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.accessToken, fetched]);
+  }, [token, fetched, setFetched]);
 
   async function fetchGroups() {
-    setLoading(true); setError("");
+    setLoading(true);
+    setError("");
     try {
-      setGroups(await getGroups(session?.accessToken));
-    } catch (e) {  // Remove ': any'
-      const errorMessage = e instanceof Error ? e.message : "Failed to fetch groups";
+      // Provide token as a fallback empty string if it's undefined
+      const realToken = token ?? "";
+      const data = await getGroups(realToken);
+      setGroups(data);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to fetch groups";
       setError(errorMessage);
     } finally {
       setLoading(false);
@@ -73,12 +77,13 @@ export default function GroupsTab() {
 
   /* ------------------------------------------------------------ */
   async function deleteGroup(g: GroupItem, deleteFiles: boolean) {
-    setLoading(true); setError("");
+    setLoading(true);
+    setError("");
     try {
-      await apiDeleteGroup(g.id, deleteFiles, session?.accessToken);
+      await apiDeleteGroup(g.id, deleteFiles, token ?? "");
       del(g.id);
-    } catch (e) {  // Remove ': any'
-      const errorMessage = e instanceof Error ? e.message : "Delete failed";
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Delete failed";
       setError(errorMessage);
     } finally {
       setLoading(false);
@@ -106,7 +111,10 @@ export default function GroupsTab() {
         {loading && groups.length > 0 && (
           <FiLoader className="absolute -top-0.5 left-20 w-4 h-4 animate-spin text-theme-600" />
         )}
-        <AddGroupDialog sessionToken={session?.accessToken ?? ""} onCreated={add} />
+        <AddGroupDialog
+          sessionToken={token ?? ""}
+          onCreated={add}
+        />
       </div>
 
       <Tooltip.Provider delayDuration={100}>
@@ -142,16 +150,16 @@ export default function GroupsTab() {
                       <ViewGroupFilesDialog
                         groupId={g.id}
                         groupName={g.name}
-                        sessionToken={session?.accessToken ?? ""}
+                        sessionToken={token ?? ""}
                       />
                       <ViewUsersDialog
                         group={g}
-                        sessionToken={session?.accessToken ?? ""}
+                        sessionToken={token ?? ""}
                         onChanged={fetchGroups}
                       />
                       <EditGroupDialog
                         group={g}
-                        sessionToken={session?.accessToken ?? ""}
+                        sessionToken={token ?? ""}
                         onUpdated={upd}
                       />
 

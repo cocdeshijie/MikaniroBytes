@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { useSession } from "next-auth/react";
 import { atom, useAtom } from "jotai";
 import * as Checkbox from "@radix-ui/react-checkbox";
 import { BiCheck, BiLoader } from "react-icons/bi";
@@ -9,6 +8,7 @@ import { cn } from "@/utils/cn";
 import { useToast } from "@/lib/toast";
 import { api, ApiError } from "@/lib/api";
 import { Select, SelectOption } from "@/components/ui/Select";
+import { useAuth } from "@/lib/auth";
 
 /* ---------- TYPES ---------- */
 interface GroupItem { id: number; name: string }
@@ -29,8 +29,8 @@ interface GroupResponse {
 }
 
 /* ---------- ATOMS ---------- */
-const loadingA    = atom(false);      // true while network in‑flight (cold load OR save)
-const refreshingA = atom(false);      // true during background cache refresh
+const loadingA    = atom(false);
+const refreshingA = atom(false);
 const errorA      = atom("");
 const groupsA     = atom<GroupItem[]>([]);
 const configA     = atom<SystemSettingsData>({
@@ -42,23 +42,23 @@ const configA     = atom<SystemSettingsData>({
 
 /* =================================================================== */
 export default function ConfigsTab() {
-  const { data: session } = useSession();
-  const { push }          = useToast();
+  const { token } = useAuth();            // ← replaces useSession
+  const { push }  = useToast();
 
-  const [loading, setLoading]     = useAtom(loadingA);
-  const [refreshing, setRefresh]  = useAtom(refreshingA);
-  const [errorMsg, setError]      = useAtom(errorA);
-  const [groups, setGroups]       = useAtom(groupsA);
-  const [config, setConfig]       = useAtom(configA);
+  const [loading, setLoading]    = useAtom(loadingA);
+  const [refreshing, setRefresh] = useAtom(refreshingA);
+  const [errorMsg, setError]     = useAtom(errorA);
+  const [groups, setGroups]      = useAtom(groupsA);
+  const [config, setConfig]      = useAtom(configA);
 
   const firstLoadRef = useRef(true);
 
-  /* ---------- fetch whenever page mounts OR user token changes ------ */
+  /* ---------- fetch whenever page mounts OR token changes ---------- */
   useEffect(() => {
-    if (!session?.accessToken) return;
+    if (!token) return;
     void fetchAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.accessToken]);
+  }, [token]);
 
   async function fetchAll() {
     if (firstLoadRef.current && groups.length === 0) {
@@ -69,8 +69,8 @@ export default function ConfigsTab() {
     setError("");
     try {
       const [settings, raw] = await Promise.all([
-        api<SystemSettingsData>("/admin/system-settings", { token: session?.accessToken }),
-        api<GroupResponse[]>("/admin/groups", { token: session?.accessToken }), // Replace any[] with GroupResponse[]
+        api<SystemSettingsData>("/admin/system-settings", { token }),
+        api<GroupResponse[]>("/admin/groups",            { token }),
       ]);
 
       setConfig(settings);
@@ -111,7 +111,7 @@ export default function ConfigsTab() {
     try {
       const updated = await api<SystemSettingsData>(
         "/admin/system-settings",
-        { method:"PUT", token: session?.accessToken, json: config },
+        { method:"PUT", token, json: config },
       );
       setConfig(updated);
       push({ title: "Settings updated", variant: "success" });
@@ -136,8 +136,8 @@ export default function ConfigsTab() {
     label: g.name,
   }));
 
-  /* shortcut to earliest valid default id */
-  const defaultId = groups.length ? (config.default_user_group_id ?? groups[0].id) : "";
+  const defaultId =
+    groups.length ? (config.default_user_group_id ?? groups[0].id) : "";
 
   /* ------------------------------------------------------------------ */
   return (
@@ -146,7 +146,6 @@ export default function ConfigsTab() {
       "border border-theme-200/50 dark:border-theme-800/50",
       "relative",
     )}>
-      {/* overlay spinner when refreshing */}
       {refreshing && (
         <div className="absolute inset-0 bg-theme-50/60 dark:bg-theme-800/60 backdrop-blur-sm flex items-center justify-center z-10 rounded-lg">
           <BiLoader className="w-6 h-6 animate-spin text-theme-500" />
