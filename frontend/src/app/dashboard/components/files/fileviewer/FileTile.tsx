@@ -44,10 +44,12 @@ export function FileTile({
   }, [file.file_id, registerTile]);
 
   /* click / context-menu handlers */
-  const handleClick = (e: React.MouseEvent) => {
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;                  // left button only
     toggleSelect(file.file_id, e.ctrlKey || e.metaKey);
-    e.stopPropagation();
+    /* no stopPropagation — let container handle lasso start */
   };
+
   const handleCtx = useCallback(() => {
     if (!selected) setExclusiveSelect(file.file_id);
   }, [file.file_id, selected, setExclusiveSelect]);
@@ -55,7 +57,7 @@ export function FileTile({
   return (
     <div
       ref={divRef}
-      onClick={handleClick}
+      onMouseDown={handleMouseDown}
       onContextMenu={handleCtx}
       className={cn(
         "h-32 w-full relative flex flex-col items-center justify-center gap-2 p-2",
