@@ -58,9 +58,9 @@ const absolute = (link: string) =>
 /*            Calculate number of columns for 120-px tiles    */
 /* ---------------------------------------------------------- */
 function calcColumns(containerWidth = 0) {
-  const usable = containerWidth || window.innerWidth; // fallback
-  const TILE   = 120;                                 // min width set in CSS
-  const GAP    = 16;                                  // Tailwind “gap-4”
+  const TILE = 120;                     // tile min-width + padding
+  const GAP  = 16;                      // Tailwind “gap-4”
+  const usable = containerWidth || window.innerWidth;
   return Math.max(1, Math.floor((usable + GAP) / (TILE + GAP)));
 }
 
@@ -80,7 +80,7 @@ export default function FileViewerContainer({
 }) {
   const { push } = useToast();
 
-  /* ---------- scoped atoms ---------- */
+  /* ---------------- state via scoped atoms ---------------- */
   const [files,        setFiles]   = useAtom(useMemo(filesA, []));
   const [loading,      setLoading] = useAtom(useMemo(loadingA, []));
   const [errorMsg,     setErr]     = useAtom(useMemo(errorA, []));
@@ -91,36 +91,32 @@ export default function FileViewerContainer({
     useAtom(useMemo(wantsDeleteA, []));
   const [needsRefresh, setNeedsRefresh] = useAtom(filesNeedsRefreshAtom);
 
-  /* ---------- pagination atoms ---------- */
+  /* pagination */
   const [page,       setPage]  = useAtom(useMemo(pageA, []));
   const [totalItems, setTotal] = useAtom(useMemo(totalA, []));
   const [columns,    setCols]  = useAtom(useMemo(colsA, []));
 
   /* ---------------------------------------------------------- */
-  /*                 COLUMN / PAGE-SIZE CALCULATION             */
+  /*        Measure container → derive #columns + page size     */
   /* ---------------------------------------------------------- */
   const containerRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
-    const measureAndSet = () => {
-      const width = containerRef.current?.clientWidth ?? 0;
-      setCols(calcColumns(width));
-    };
-
-    // 1) immediate & 2) on resize
-    measureAndSet();
-    window.addEventListener("resize", measureAndSet);
-    return () => window.removeEventListener("resize", measureAndSet);
+    const measure = () =>
+      setCols(calcColumns(containerRef.current?.clientWidth));
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
   }, [setCols]);
 
-  const pageSize   = columns ? columns * 5 : 0;        // 5 rows * N cols
+  const pageSize   = columns ? columns * 5 : 0;            // 5 rows
   const totalPages = pageSize ? Math.max(1, Math.ceil(totalItems / pageSize)) : 1;
 
   /* ---------------------------------------------------------- */
   /*                         FETCH LIST                         */
   /* ---------------------------------------------------------- */
   useEffect(() => {
-    if (!pageSize) return;               // until we know our columns/rows
+    if (!pageSize) return;                // wait for first measurement
 
     setLoading(true);
     setErr("");
@@ -131,10 +127,11 @@ export default function FileViewerContainer({
           `${fetchEndpoint}?page=${page}&page_size=${pageSize}`,
           { token: sessionToken },
         );
+
         setFiles(data.items);
         setTotal(data.total);
 
-        // rewind one page if we just deleted everything on current page
+        // if page became empty (e.g. after deletions) step back
         if (!data.items.length && page > 1) {
           setPage((p) => p - 1);
         } else {
@@ -174,7 +171,7 @@ export default function FileViewerContainer({
   const setExclusive = (id: number) => setSel(new Set<number>([id]));
 
   /* ---------------------------------------------------------- */
-  /*                       LASSO                                */
+  /*                       LASSO SELECT                         */
   /* ---------------------------------------------------------- */
   const {
     boxStyle,
@@ -213,7 +210,7 @@ export default function FileViewerContainer({
         download: file.original_filename ?? `file_${file.file_id}`,
       }).click();
       URL.revokeObjectURL(href);
-    } catch (e) {
+    } catch {
       push({ title: "Download error", variant: "error" });
     } finally {
       setDL(null);
@@ -243,8 +240,10 @@ export default function FileViewerContainer({
     }
   };
 
-  const batchDelete = async () => {
+  /* ---------- delete & refill page ---------- */
+  async function batchDelete() {
     if (readOnly || !selCount) return;
+
     setLoading(true);
     try {
       await api("/files/batch-delete", {
@@ -252,17 +251,22 @@ export default function FileViewerContainer({
         token : sessionToken,
         json  : { ids: Array.from(selectedIds) },
       });
+
+      // optimistic local update
       setFiles((prev) => prev.filter((f) => !selectedIds.has(f.file_id)));
       setTotal((t) => t - selCount);
       clearSel();
+
+      /* mark viewer for refresh so the page is re-filled */
+      setNeedsRefresh(true);
       push({ title: "Deleted", variant: "success" });
     } catch {
       push({ title: "Delete failed", variant: "error" });
-    } finally {
       setLoading(false);
+    } finally {
       setWantsDelete(false);
     }
-  };
+  }
 
   /* ---------------------------------------------------------- */
   /*                    PAGINATION COMPONENT                    */
@@ -333,7 +337,7 @@ export default function FileViewerContainer({
 
         {title && <h4 className="text-lg font-medium mb-3">{title}</h4>}
 
-        {/* ----------------------------- TOOLBAR ----------------------------- */}
+        {/* toolbar */}
         <div className="mb-3 flex items-center gap-3 min-h-[34px]">
           {selCount ? (
             <>
@@ -382,14 +386,14 @@ export default function FileViewerContainer({
           )}
         </div>
 
-        {/* ----------------------------- ERRORS ------------------------------ */}
+        {/* error */}
         {errorMsg && (
           <p className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 mb-4 rounded">
             {errorMsg}
           </p>
         )}
 
-        {/* ----------------------------- CONTENT ----------------------------- */}
+        {/* content */}
         {loading && files.length === 0 ? (
           <SkeletonGrid />
         ) : (
@@ -432,7 +436,7 @@ export default function FileViewerContainer({
               </div>
             </ContextMenu.Trigger>
 
-            {/* ----------------------- CONTEXT MENU ----------------------- */}
+            {/* context menu */}
             <ContextMenu.Portal>
               <ContextMenu.Content
                 className="min-w-[180px] bg-theme-50 dark:bg-theme-900 rounded-md
@@ -476,11 +480,11 @@ export default function FileViewerContainer({
           </ContextMenu.Root>
         )}
 
-        {/* -------------------------- PAGINATION --------------------------- */}
+        {/* pagination */}
         <Pagination />
       </div>
 
-      {/* ----------------------- DELETE CONFIRM ----------------------- */}
+      {/* delete confirm dialog */}
       <AlertDialog.Portal>
         <AlertDialog.Overlay className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50" />
         <AlertDialog.Content
