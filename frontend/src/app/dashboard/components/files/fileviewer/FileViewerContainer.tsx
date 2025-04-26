@@ -9,6 +9,7 @@ import {
   useRef,
   useCallback,
   useMemo,
+  useState,
 } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
@@ -59,7 +60,7 @@ const absolute = (link: string) =>
 /* ---------------------------------------------------------- */
 function calcColumns(containerWidth = 0) {
   const TILE = 120;
-  const GAP  = 16;
+  const GAP = 16;
   const usable = containerWidth || window.innerWidth;
   return Math.max(1, Math.floor((usable + GAP) / (TILE + GAP)));
 }
@@ -81,26 +82,28 @@ export default function FileViewerContainer({
   const { push } = useToast();
 
   /* ---------------- state via scoped atoms ---------------- */
-  const [files,        setFiles]   = useAtom(useMemo(filesA, []));
-  const [loading,      setLoading] = useAtom(useMemo(loadingA, []));
-  const [errorMsg,     setErr]     = useAtom(useMemo(errorA, []));
-  const [selectedIds,  setSel]     = useAtom(useMemo(selectedIdsA, []));
-  const [downloadingId,setDL]      = useAtom(useMemo(downloadingA, []));
-  const [zipBusy,      setZipBusy] = useAtom(useMemo(zipBusyA, []));
-  const [wantsDelete,  setWantsDelete] =
-    useAtom(useMemo(wantsDeleteA, []));
+  const [files, setFiles] = useAtom(useMemo(filesA, []));
+  const [loading, setLoading] = useAtom(useMemo(loadingA, []));
+  const [errorMsg, setErr] = useAtom(useMemo(errorA, []));
+  const [selectedIds, setSel] = useAtom(useMemo(selectedIdsA, []));
+  const [downloadingId, setDL] = useAtom(useMemo(downloadingA, []));
+  const [zipBusy, setZipBusy] = useAtom(useMemo(zipBusyA, []));
+  const [wantsDelete, setWantsDelete] = useAtom(useMemo(wantsDeleteA, []));
   const [needsRefresh, setNeedsRefresh] = useAtom(filesNeedsRefreshAtom);
 
   /* pagination atoms */
-  const [page,       setPage]  = useAtom(useMemo(pageA, []));
+  const [page, setPage] = useAtom(useMemo(pageA, []));
   const [totalItems, setTotal] = useAtom(useMemo(totalA, []));
-  const [columns,    setCols]  = useAtom(useMemo(colsA, []));
+  const [columns, setCols] = useAtom(useMemo(colsA, []));
+
+  /* force-remount key for lasso after list changes */
+  const [lassoKey, bumpLassoKey] = useState(0);
 
   /* ---------------------------------------------------------- */
   /*        Measure container → derive #columns + page size     */
   /* ---------------------------------------------------------- */
-  const viewerRef    = useRef<HTMLDivElement>(null);   // whole viewer
-  const containerRef = useRef<HTMLDivElement>(null);   // grid area
+  const viewerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
     const measure = () =>
@@ -110,8 +113,10 @@ export default function FileViewerContainer({
     return () => window.removeEventListener("resize", measure);
   }, [setCols]);
 
-  const pageSize   = columns ? columns * 5 : 0;            // 5 rows
-  const totalPages = pageSize ? Math.max(1, Math.ceil(totalItems / pageSize)) : 1;
+  const pageSize = columns ? columns * 5 : 0; // 5 rows
+  const totalPages = pageSize
+    ? Math.max(1, Math.ceil(totalItems / pageSize))
+    : 1;
 
   /* ---------------------------------------------------------- */
   /*                       SELECTION                            */
@@ -127,32 +132,28 @@ export default function FileViewerContainer({
   );
 
   const clearSel = useCallback(() => setSel(new Set<number>()), [setSel]);
-
   const setExclusive = (id: number) => setSel(new Set<number>([id]));
 
-  /*  ✱ GLOBAL CLICK = deselect when user clicks **outside the viewer**  */
+  /* ---------------------------------------------------------- */
+  /*     Global click = deselect outside viewer / menu / dialog */
+  /* ---------------------------------------------------------- */
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
-      if (e.metaKey || e.ctrlKey) return;            // multi-select gesture
-
-      const target = e.target as HTMLElement | null;
-      if (!target) return;
-
-      // inside the viewer? – leave it for local handlers
-      if (viewerRef.current?.contains(target)) return;
-
-      if (selectedIds.size) clearSel();
+      if (e.metaKey || e.ctrlKey || wantsDelete) return;
+      const el = e.target as HTMLElement | null;
+      if (!el) return;
+      if (el.closest("[data-radix-context-menu-content]")) return;
+      if (viewerRef.current && !viewerRef.current.contains(el)) clearSel();
     };
-
     document.addEventListener("click", onDocClick);
     return () => document.removeEventListener("click", onDocClick);
-  }, [selectedIds.size, clearSel]);
+  }, [clearSel, wantsDelete]);
 
   /* ---------------------------------------------------------- */
   /*                       LASSO SELECT                         */
   /* ---------------------------------------------------------- */
-  const addModeRef  = useRef(false);    // remembers ctrl/meta state
-  const didLassoRef = useRef(false);    // one-shot: last action was lasso
+  const addModeRef = useRef(false);
+  const didLassoRef = useRef(false);
 
   const {
     boxStyle,
@@ -161,15 +162,12 @@ export default function FileViewerContainer({
     registerTile,
   } = useLasso(
     (ids) => {
-      didLassoRef.current = true;       // mark drag finished
-      setSel((prev) => {
-        if (addModeRef.current) {
-          const next = new Set(prev);
-          ids.forEach((id) => next.add(id));
-          return next;
-        }
-        return new Set(ids);
-      });
+      didLassoRef.current = true;
+      setSel((prev) =>
+        addModeRef.current
+          ? new Set(Array.from(prev).concat(ids))
+          : new Set(ids),
+      );
     },
     containerRef,
   );
@@ -190,15 +188,17 @@ export default function FileViewerContainer({
           { token: sessionToken },
         );
 
-        setFiles(data.items);
+        const unique = Array.from(
+          new Map(data.items.map((f) => [f.file_id, f])).values(),
+        );
+        setFiles(unique);
         setTotal(data.total);
+        clearSel();
+        bumpLassoKey((k) => k + 1);
 
-        if (!data.items.length && page > 1) {
-          setPage((p) => p - 1);
-        } else {
-          setLoading(false);
-          if (needsRefresh) setNeedsRefresh(false);
-        }
+        if (!unique.length && page > 1) setPage((p) => p - 1);
+        else setLoading(false);
+        if (needsRefresh) setNeedsRefresh(false);
       } catch (e) {
         setErr(e instanceof Error ? e.message : "Load error");
         setLoading(false);
@@ -211,6 +211,7 @@ export default function FileViewerContainer({
     sessionToken,
     needsRefresh,
     setNeedsRefresh,
+    clearSel,
     setFiles,
     setTotal,
     setPage,
@@ -219,17 +220,18 @@ export default function FileViewerContainer({
   /* ---------------------------------------------------------- */
   /*                       ACTIONS                              */
   /* ---------------------------------------------------------- */
-  const selCount    = selectedIds.size;
-  const selectedOne = selCount === 1
-    ? files.find((f) => f.file_id === Array.from(selectedIds)[0])
-    : null;
+  const selCount = selectedIds.size;
+  const selectedOne =
+    selCount === 1
+      ? files.find((f) => f.file_id === Array.from(selectedIds)[0])
+      : null;
 
   const copySelected = async () => {
     if (!selCount) return;
-    const urlMap = new Map(files.map((f) => [f.file_id, f.direct_link]));
-    await navigator.clipboard.writeText(
-      Array.from(selectedIds).map((id) => absolute(urlMap.get(id)!)).join("\n"),
-    );
+    const url = Array.from(selectedIds)
+      .map((id) => absolute(files.find((f) => f.file_id === id)!.direct_link))
+      .join("\n");
+    await navigator.clipboard.writeText(url);
     push({ title: "URLs copied", variant: "success" });
   };
 
@@ -256,8 +258,8 @@ export default function FileViewerContainer({
     try {
       const blob = await api<Blob>("/files/batch-download", {
         method: "POST",
-        token : sessionToken,
-        json  : { ids: Array.from(selectedIds) },
+        token: sessionToken,
+        json: { ids: Array.from(selectedIds) },
       });
       const href = URL.createObjectURL(blob);
       Object.assign(document.createElement("a"), {
@@ -280,15 +282,10 @@ export default function FileViewerContainer({
     try {
       await api("/files/batch-delete", {
         method: "DELETE",
-        token : sessionToken,
-        json  : { ids: Array.from(selectedIds) },
+        token: sessionToken,
+        json: { ids: Array.from(selectedIds) },
       });
-
-      setFiles((prev) => prev.filter((f) => !selectedIds.has(f.file_id)));
-      setTotal((t) => t - selCount);
-      clearSel();
-      setNeedsRefresh(true);
-      push({ title: "Deleted", variant: "success" });
+      setNeedsRefresh(true); // triggers list refresh
     } catch {
       push({ title: "Delete failed", variant: "error" });
       setLoading(false);
@@ -340,7 +337,7 @@ export default function FileViewerContainer({
   /* ---------------------------------------------------------- */
   const SkeletonGrid = () => (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-4">
-      {Array.from({ length: 8 }).map((_ , i) => (
+      {Array.from({ length: 8 }).map((_, i) => (
         <div
           key={i}
           className="h-32 rounded-lg bg-theme-200 dark:bg-theme-800 animate-pulse"
@@ -363,7 +360,7 @@ export default function FileViewerContainer({
 
         {title && <h4 className="text-lg font-medium mb-3">{title}</h4>}
 
-        {/* --------------------------- TOOLBAR --------------------------- */}
+        {/* --------------------------- TOOLBAR ------------------------- */}
         <div className="mb-3 flex items-center gap-3 min-h-[34px]">
           {selCount ? (
             <>
@@ -408,9 +405,7 @@ export default function FileViewerContainer({
               </button>
             </>
           ) : (
-            <span className="opacity-0 select-none">
-              placeholder
-            </span>
+            <span className="opacity-0 select-none">placeholder</span>
           )}
         </div>
 
@@ -421,32 +416,31 @@ export default function FileViewerContainer({
           </p>
         )}
 
-        {/* --------------------------- CONTENT --------------------------- */}
+        {/* --------------------------- CONTENT ------------------------- */}
         {loading && files.length === 0 ? (
           <SkeletonGrid />
         ) : (
           <ContextMenu.Root>
             <ContextMenu.Trigger asChild>
               <div
+                key={lassoKey} // force fresh lasso map on list change
                 ref={containerRef}
                 onClick={(e) => {
-                  /* ignore first click after lasso (mouseup) */
                   if (didLassoRef.current) {
                     didLassoRef.current = false;
                     return;
                   }
-                  /* blank click clears unless ctrl/meta held */
                   if (
                     !e.ctrlKey &&
                     !e.metaKey &&
-                    !(e.target as HTMLElement | null)?.closest("[data-filetile]")
+                    !(e.target as HTMLElement).closest("[data-filetile]")
                   ) {
                     clearSel();
                   }
                 }}
                 onMouseDown={(e) => {
                   addModeRef.current = e.ctrlKey || e.metaKey;
-                  lassoDown(e);          // always begin drag
+                  lassoDown(e); // hook decides drag vs click
                 }}
                 className="relative min-h-[300px]"
               >
@@ -473,7 +467,7 @@ export default function FileViewerContainer({
               </div>
             </ContextMenu.Trigger>
 
-            {/* ----------------------- CONTEXT MENU ----------------------- */}
+            {/* ----------------------- CONTEXT MENU --------------------- */}
             <ContextMenu.Portal>
               <ContextMenu.Content
                 className="min-w-[180px] bg-theme-50 dark:bg-theme-900 rounded-md
@@ -521,7 +515,7 @@ export default function FileViewerContainer({
         <Pagination />
       </div>
 
-      {/* delete confirm dialog */}
+      {/* ----------------------- DELETE DIALOG ------------------------ */}
       <AlertDialog.Portal>
         <AlertDialog.Overlay className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50" />
         <AlertDialog.Content
