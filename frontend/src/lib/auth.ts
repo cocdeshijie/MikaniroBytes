@@ -4,26 +4,34 @@ import {
   tokenAtom,
   userInfoAtom,
   isAuthenticatedAtom,
+  authLoadedAtom,
 } from "@/atoms/auth";
 import { api } from "@/lib/api";
 
 const STORAGE_KEY = "mb_token";
 
 /* ------------------------------------------------------------------ */
-/*  Hook that wires together login / logout / re-hydration            */
+/*                             useAuth()                              */
 /* ------------------------------------------------------------------ */
 export function useAuth() {
   const [token,      setToken]   = useAtom(tokenAtom);
   const [userInfo,   setUser]    = useAtom(userInfoAtom);
   const [isAuthed]               = useAtom(isAuthenticatedAtom);
+  const [,             setLoaded] = useAtom(authLoadedAtom);      // NEW
 
-  /* ① ─ Re-hydrate once after hard-refresh -------------------------------- */
+  /* ---------- 1) first run: try localStorage token ---------- */
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (token) return;                       // already initialised
+    if (token !== undefined) {             // we already know (either null or jwt)
+      setLoaded(true);
+      return;
+    }
 
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) return;
+    if (!saved) {
+      setLoaded(true);                      // nothing to do
+      return;
+    }
 
     (async () => {
       try {
@@ -41,13 +49,13 @@ export function useAuth() {
           email: me.email,
           groupName: me.group?.name,
         });
-      } catch {
-        localStorage.removeItem(STORAGE_KEY); // stale token – drop it silently
+      } finally {
+        setLoaded(true);                    // whatever the result -> we're done
       }
     })();
-  }, [token, setToken, setUser]);
+  }, [token, setToken, setUser, setLoaded]);
 
-  /* ② ─ Login ------------------------------------------------------------- */
+  /* ---------- 2) login ---------- */
   const login = useCallback(
     async (username: string, password: string) => {
       const { access_token } = await api<{ access_token: string }>("/auth/login", {
@@ -75,7 +83,7 @@ export function useAuth() {
     [setToken, setUser],
   );
 
-  /* ③ ─ Logout ------------------------------------------------------------ */
+  /* ---------- 3) logout ---------- */
   const logout = useCallback(async () => {
     try {
       if (token) {
@@ -88,11 +96,12 @@ export function useAuth() {
     }
   }, [token, setToken, setUser]);
 
-  /* ④ ─ public API -------------------------------------------------------- */
+  /* ---------- public API ---------- */
   return {
     token,
     userInfo,
     isAuthenticated: isAuthed,
+    ready:           useAtom(authLoadedAtom)[0],   // expose the flag
     login,
     logout,
   };

@@ -6,23 +6,16 @@ import { cn } from "@/utils/cn";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const { isAuthenticated, userInfo } = useAuth();
-  const router = useRouter();
-  const pathname = usePathname();
-
-  /* Simple admin check if you store groupName. */
-  const isAdmin = userInfo?.groupName === "SUPER_ADMIN";
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, userInfo, ready } = useAuth();      // ready!
+  const router     = useRouter();
+  const pathname   = usePathname();
+  const isAdmin    = userInfo?.groupName === "SUPER_ADMIN";
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.replace("/auth/login");
-    }
-  }, [isAuthenticated, router]);
+    if (!ready) return;
+    if (!isAuthenticated) router.replace("/auth/login");
+  }, [ready, isAuthenticated, router]);
 
   if (!isAuthenticated) {
     return (

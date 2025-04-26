@@ -10,7 +10,7 @@ import { cn } from "@/utils/cn";
 import { api } from "@/lib/api";
 import { useToast } from "@/lib/toast";
 import { useAuth } from "@/lib/auth";
-import { userInfoAtom, type UserInfo  } from "@/atoms/auth";
+import { userInfoAtom, type UserInfo } from "@/atoms/auth";
 
 /* ------------------------------------------------------------------ */
 /*  Local-only atoms (they used to live in '@/atoms/auth')            */
@@ -37,9 +37,9 @@ const newPwA = atom("");
 /* ================================================================== */
 /* ================================================================== */
 export default function ProfilePage() {
-  const router         = useRouter();
-  const { push }       = useToast();
-  const { isAuthenticated, token } = useAuth();
+  const router   = useRouter();
+  const { push } = useToast();
+  const { isAuthenticated, token, ready } = useAuth();
 
   const [userInfo, setUserInfo] = useAtom(userInfoAtom);
   const [sessions, setSessions] = useAtom(sessionsAtom);
@@ -52,8 +52,9 @@ export default function ProfilePage() {
 
   /* ---------- redirect if not authenticated ---------- */
   useEffect(() => {
+    if (!ready) return;
     if (!isAuthenticated) router.replace("/auth/login");
-  }, [isAuthenticated, router]);
+  }, [ready, isAuthenticated, router]);
 
   /* ---------- first load: user info + sessions -------- */
   useEffect(() => {
