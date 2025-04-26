@@ -13,7 +13,7 @@ import { useAuth } from "@/lib/auth";
 import { userInfoAtom, type UserInfo } from "@/atoms/auth";
 
 /* ------------------------------------------------------------------ */
-/*  Local-only atoms (they used to live in '@/atoms/auth')            */
+/*                          LOCAL-ONLY ATOMS                          */
 /* ------------------------------------------------------------------ */
 interface SessionItem {
   session_id: number;
@@ -24,18 +24,17 @@ interface SessionItem {
   last_accessed: string;
 }
 
-const sessionsAtom  = atom<SessionItem[]>([]);
-const loadingAtom   = atom(false);
-const errorAtom     = atom("");
-const fetchedAtom   = atom(false);
+const sessionsAtom = atom<SessionItem[]>([]);
+const loadingAtom  = atom(false);
+const errorAtom    = atom("");
+const fetchedAtom  = atom(false);
 
 const oldPwA = atom("");
 const newPwA = atom("");
 
-/* ================================================================== */
-/*                             COMPONENT                              */
-/* ================================================================== */
-/* ================================================================== */
+/* =================================================================== */
+/*                              COMPONENT                              */
+/* =================================================================== */
 export default function ProfilePage() {
   const router   = useRouter();
   const { push } = useToast();
@@ -50,15 +49,29 @@ export default function ProfilePage() {
   const [oldPw, setOldPw] = useAtom(oldPwA);
   const [newPw, setNewPw] = useAtom(newPwA);
 
-  /* ---------- redirect if not authenticated ---------- */
+  /* ---------- shared skeleton (memoised) --------------------------- */
+  const Skeleton = useMemo(
+    () => (
+      <div className="space-y-6 md:grid md:grid-cols-12 md:gap-6 md:space-y-0 animate-pulse">
+        <div className="md:col-span-4 space-y-6">
+          <div className="h-64 rounded-xl bg-theme-200/40 dark:bg-theme-800/30" />
+          <div className="h-72 rounded-xl bg-theme-200/40 dark:bg-theme-800/30" />
+        </div>
+        <div className="md:col-span-8 h-96 rounded-xl bg-theme-200/40 dark:bg-theme-800/30" />
+      </div>
+    ),
+    [],
+  );
+
+  /* ---------- redirect unauthenticated AFTER auth check ------------ */
   useEffect(() => {
     if (!ready) return;
     if (!isAuthenticated) router.replace("/auth/login");
   }, [ready, isAuthenticated, router]);
 
-  /* ---------- first load: user info + sessions -------- */
+  /* ---------- first load: /auth/me + /auth/sessions ---------------- */
   useEffect(() => {
-    if (!isAuthenticated || fetched) return;
+    if (!ready || !isAuthenticated || fetched) return;
 
     setLoading(true);
     setError("");
@@ -88,18 +101,41 @@ export default function ProfilePage() {
         setFetched(true);
       }
     })();
-  }, [isAuthenticated, fetched, token, setLoading, setError, setUserInfo, setSessions, setFetched]);
+  }, [
+    ready,
+    isAuthenticated,
+    fetched,
+    token,
+    setLoading,
+    setError,
+    setUserInfo,
+    setSessions,
+    setFetched,
+  ]);
 
+  /* ---------- UX paths --------------------------------------------- */
+  if (!ready) {
+    /* still discovering auth state → show full skeleton */
+    return <PageFrame headerError="">{Skeleton}</PageFrame>;
+  }
 
-  /* ------------------------------------------------------------------
-   *                               HELPERS
-   * ------------------------------------------------------------------ */
+  if (ready && isAuthenticated && !fetched) {
+    /* logged-in but profile data not yet fetched */
+    return <PageFrame headerError={errorMsg}>{Skeleton}</PageFrame>;
+  }
+
+  if (!isAuthenticated) {
+    /* will redirect very soon */
+    return <FullPageMsg>Redirecting…</FullPageMsg>;
+  }
+
+  /* ---------- helper actions (now that token is guaranteed) -------- */
   const revokeSession = async (id: number) => {
     try {
       await api(`/auth/sessions/${id}`, { method: "DELETE", token });
       setSessions((p) => p.filter((s) => s.session_id !== id));
       push({ title: "Session revoked", variant: "success" });
-    } catch (e) {
+    } catch {
       push({ title: "Revoke failed", variant: "error" });
     }
   };
@@ -110,7 +146,7 @@ export default function ProfilePage() {
       await api("/auth/logout-all", { method: "POST", token });
       setSessions([]);
       push({ title: "Logged out everywhere", variant: "success" });
-    } catch (e) {
+    } catch {
       push({ title: "Logout-all failed", variant: "error" });
     }
   };
@@ -124,62 +160,52 @@ export default function ProfilePage() {
         json: { old_password: oldPw, new_password: newPw },
       });
       push({ title: "Password updated", variant: "success" });
-      setOldPw(""); setNewPw("");
-    } catch (e) {
+      setOldPw("");
+      setNewPw("");
+    } catch {
       push({ title: "Password change failed", variant: "error" });
     }
   };
 
-  /* ---------- skeleton shown until requests finish ---------- */
-  const Skeleton = useMemo(
-    () => (
-      <div className="space-y-6 md:grid md:grid-cols-12 md:gap-6 md:space-y-0 animate-pulse">
-        <div className="md:col-span-4 space-y-6">
-          <div className="h-64 rounded-xl bg-theme-200/40 dark:bg-theme-800/30" />
-          <div className="h-72 rounded-xl bg-theme-200/40 dark:bg-theme-800/30" />
-        </div>
-        <div className="md:col-span-8 h-96 rounded-xl bg-theme-200/40 dark:bg-theme-800/30" />
+  /* ---------- FINAL RENDER ----------------------------------------- */
+  return (
+    <PageFrame headerError={errorMsg}>
+      <div className="md:grid md:grid-cols-12 md:gap-6">
+        <LeftColumn
+          userInfo={userInfo}
+          oldPw={oldPw}
+          newPw={newPw}
+          setOldPw={setOldPw}
+          setNewPw={setNewPw}
+          changePw={changePw}
+        />
+        <RightColumn
+          sessions={sessions}
+          revokeSession={revokeSession}
+          revokeAll={revokeAll}
+        />
       </div>
-    ),
-    [],
+    </PageFrame>
   );
+}
 
-  /* ---------- if not auth, show a quick message or fallback ---------- */
-  if (!isAuthenticated) {
-    return <FullPageMsg>Redirecting…</FullPageMsg>;
-  }
-
-  /* ------------------------------------------------------------------
-   *                          MAIN LAYOUT
-   * ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ */
+/*                               FRAME                                */
+/* ------------------------------------------------------------------ */
+function PageFrame({
+  headerError,
+  children,
+}: {
+  headerError: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="min-h-screen bg-theme-50 dark:bg-theme-950">
-      {/* Gradient header */}
-      <Header errorMsg={errorMsg} />
-
-      {/* Content */}
+      <Header errorMsg={headerError} />
       <section className="relative bg-theme-50 dark:bg-theme-950">
         <div className="hidden md:block absolute inset-0 bg-theme-100 dark:bg-theme-900 opacity-20" />
         <div className="relative py-6 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          {!fetched ? (
-            Skeleton
-          ) : (
-            <div className="md:grid md:grid-cols-12 md:gap-6">
-              <LeftColumn
-                userInfo={userInfo}
-                oldPw={oldPw}
-                newPw={newPw}
-                setOldPw={setOldPw}
-                setNewPw={setNewPw}
-                changePw={changePw}
-              />
-              <RightColumn
-                sessions={sessions}
-                revokeSession={revokeSession}
-                revokeAll={revokeAll}
-              />
-            </div>
-          )}
+          {children}
         </div>
       </section>
     </div>
@@ -197,7 +223,7 @@ function FullPageMsg({ children }: { children: string }) {
   );
 }
 
-/* ---------- header ------------------------------------------------- */
+/* ---------- Header ------------------------------------------------- */
 function Header({ errorMsg }: { errorMsg: string }) {
   return (
     <div
@@ -355,11 +381,7 @@ function RightColumn({
                     <div className="space-y-2 flex-1">
                       <InfoRow
                         label="Token"
-                        value={
-                          <span className="font-mono">
-                            {s.token.slice(0, 20)}…
-                          </span>
-                        }
+                        value={<span className="font-mono">{s.token.slice(0, 20)}…</span>}
                       />
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
                         <InfoRow label="Device"      value={s.client_name || "Unknown"} />
