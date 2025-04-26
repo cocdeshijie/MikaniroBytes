@@ -38,13 +38,13 @@ const newPwA = atom("");
 export default function ProfilePage() {
   const router   = useRouter();
   const { push } = useToast();
-  const { isAuthenticated, token, ready } = useAuth();
+  const { isAuthenticated, token, ready, userInfo } = useAuth();
 
-  const [userInfo, setUserInfo] = useAtom(userInfoAtom);
-  const [sessions, setSessions] = useAtom(sessionsAtom);
-  const [loading,  setLoading]  = useAtom(loadingAtom);
-  const [errorMsg, setError]    = useAtom(errorAtom);
-  const [fetched,  setFetched]  = useAtom(fetchedAtom);
+  const [, setUserInfo]          = useAtom(userInfoAtom);
+  const [sessions, setSessions]  = useAtom(sessionsAtom);
+  const [loading,  setLoading]   = useAtom(loadingAtom);
+  const [errorMsg, setError]     = useAtom(errorAtom);
+  const [fetched,  setFetched]   = useAtom(fetchedAtom);
 
   const [oldPw, setOldPw] = useAtom(oldPwA);
   const [newPw, setNewPw] = useAtom(newPwA);
@@ -69,33 +69,25 @@ export default function ProfilePage() {
     if (!isAuthenticated) router.replace("/auth/login");
   }, [ready, isAuthenticated, router]);
 
-  /* ---------- first load: /auth/me + /auth/sessions ---------------- */
+  /* ---------- first load: fetch sessions only ---------------------- */
   useEffect(() => {
-    if (!ready || !isAuthenticated || fetched) return;
+    if (!ready || !isAuthenticated || fetched || !token) return;
 
     setLoading(true);
     setError("");
 
     (async () => {
       try {
-        const me = await api<{
-          id: number;
-          username: string;
-          email?: string;
-          group?: { name: string };
-        }>("/auth/me", { token });
+        /* userInfo already provided by useAuth() --------------- */
+        if (userInfo) {
+          setUserInfo(userInfo); // ensure atoms in sync (SSR safety)
+        }
 
-        setUserInfo({
-          id: me.id,
-          username: me.username,
-          email: me.email,
-          groupName: me.group?.name,
-        });
-
+        /* fetch active sessions ------------------------------- */
         const list = await api<SessionItem[]>("/auth/sessions", { token });
         setSessions(list);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to load data");
+        setError(e instanceof Error ? e.message : "Failed to load sessions");
       } finally {
         setLoading(false);
         setFetched(true);
@@ -106,9 +98,10 @@ export default function ProfilePage() {
     isAuthenticated,
     fetched,
     token,
+    userInfo,
+    setUserInfo,
     setLoading,
     setError,
-    setUserInfo,
     setSessions,
     setFetched,
   ]);
@@ -120,7 +113,7 @@ export default function ProfilePage() {
   }
 
   if (ready && isAuthenticated && !fetched) {
-    /* logged-in but profile data not yet fetched */
+    /* logged-in but sessions not yet fetched */
     return <PageFrame headerError={errorMsg}>{Skeleton}</PageFrame>;
   }
 
