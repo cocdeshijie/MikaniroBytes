@@ -19,7 +19,7 @@ import {
   FiTrash,
   FiArchive,
 } from "react-icons/fi";
-import { atom, useAtom } from "jotai";
+import { useAtom } from "jotai";
 import { cn } from "@/utils/cn";
 import { useLasso } from "@/hooks/useLasso";
 import { api } from "@/lib/api";
