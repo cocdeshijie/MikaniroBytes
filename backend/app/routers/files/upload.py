@@ -113,7 +113,7 @@ def upload_file(
     return {
         "detail": "File uploaded successfully",
         "file_id": db_file.id,
-        "direct_link": f"{base_url}/uploads/{db_file.storage_data.get('path')}",
+        "direct_link": f"{base_url}/{db_file.storage_data.get('path')}",
         "download_link": f"{base_url}/files/download/{db_file.id}",
         "original_filename": db_file.original_filename,
     }

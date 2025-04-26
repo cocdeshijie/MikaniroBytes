@@ -202,7 +202,7 @@ def list_user_files(
             {
                 "file_id": f.id,
                 "original_filename": f.original_filename,
-                "direct_link": f"/uploads/{f.storage_data.get('path')}",
+                "direct_link": f"/{f.storage_data.get('path')}",
                 "has_preview": has_preview,
                 "preview_url": preview_url,
             }

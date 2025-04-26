@@ -123,7 +123,7 @@ def list_my_files(
     out: List[MyFileItem] = []
     for f in rows:
         # Build direct link
-        direct_link = f"{base_url}/uploads/{f.storage_data.get('path')}"
+        direct_link = f"{base_url}/{f.storage_data.get('path')}"
         # Check preview
         has_preview = bool(f.has_preview and f.default_preview_path)
         preview_url = None
