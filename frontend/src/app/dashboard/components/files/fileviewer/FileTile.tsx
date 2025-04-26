@@ -45,9 +45,9 @@ export function FileTile({
 
   /* click / context-menu handlers */
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0) return;                  // left button only
+    if (e.button !== 0) return; // left-button only
     toggleSelect(file.file_id, e.ctrlKey || e.metaKey);
-    /* no stopPropagation — let container handle lasso start */
+    /* don’t stopPropagation – container/lasso need this */
   };
 
   const handleCtx = useCallback(() => {
@@ -56,6 +56,7 @@ export function FileTile({
 
   return (
     <div
+      data-filetile
       ref={divRef}
       onMouseDown={handleMouseDown}
       onContextMenu={handleCtx}

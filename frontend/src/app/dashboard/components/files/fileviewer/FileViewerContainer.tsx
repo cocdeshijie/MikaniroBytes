@@ -55,7 +55,7 @@ const absolute = (link: string) =>
     : `${NEXT_PUBLIC_BACKEND_URL}${link.startsWith("/") ? "" : "/"}${link}`;
 
 /* ---------------------------------------------------------- */
-/*            Calculate number of columns for 120-px tiles    */
+/*            Calculate number of columns for 120-px tiles     */
 /* ---------------------------------------------------------- */
 function calcColumns(containerWidth = 0) {
   const TILE = 120;
@@ -99,7 +99,8 @@ export default function FileViewerContainer({
   /* ---------------------------------------------------------- */
   /*        Measure container → derive #columns + page size     */
   /* ---------------------------------------------------------- */
-  const containerRef = useRef<HTMLDivElement>(null);
+  const viewerRef    = useRef<HTMLDivElement>(null);   // whole viewer
+  const containerRef = useRef<HTMLDivElement>(null);   // grid area
 
   useLayoutEffect(() => {
     const measure = () =>
@@ -111,6 +112,67 @@ export default function FileViewerContainer({
 
   const pageSize   = columns ? columns * 5 : 0;            // 5 rows
   const totalPages = pageSize ? Math.max(1, Math.ceil(totalItems / pageSize)) : 1;
+
+  /* ---------------------------------------------------------- */
+  /*                       SELECTION                            */
+  /* ---------------------------------------------------------- */
+  const toggleSelect = useCallback(
+    (id: number, additive: boolean) =>
+      setSel((prev) => {
+        const next = new Set<number>(additive ? prev : []);
+        next.has(id) ? next.delete(id) : next.add(id);
+        return next;
+      }),
+    [setSel],
+  );
+
+  const clearSel = useCallback(() => setSel(new Set<number>()), [setSel]);
+
+  const setExclusive = (id: number) => setSel(new Set<number>([id]));
+
+  /*  ✱ GLOBAL CLICK = deselect when user clicks **outside the viewer**  */
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      if (e.metaKey || e.ctrlKey) return;            // multi-select gesture
+
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+
+      // inside the viewer? – leave it for local handlers
+      if (viewerRef.current?.contains(target)) return;
+
+      if (selectedIds.size) clearSel();
+    };
+
+    document.addEventListener("click", onDocClick);
+    return () => document.removeEventListener("click", onDocClick);
+  }, [selectedIds.size, clearSel]);
+
+  /* ---------------------------------------------------------- */
+  /*                       LASSO SELECT                         */
+  /* ---------------------------------------------------------- */
+  const addModeRef  = useRef(false);    // remembers ctrl/meta state
+  const didLassoRef = useRef(false);    // one-shot: last action was lasso
+
+  const {
+    boxStyle,
+    isVisible: lassoVisible,
+    onMouseDown: lassoDown,
+    registerTile,
+  } = useLasso(
+    (ids) => {
+      didLassoRef.current = true;       // mark drag finished
+      setSel((prev) => {
+        if (addModeRef.current) {
+          const next = new Set(prev);
+          ids.forEach((id) => next.add(id));
+          return next;
+        }
+        return new Set(ids);
+      });
+    },
+    containerRef,
+  );
 
   /* ---------------------------------------------------------- */
   /*                         FETCH LIST                         */
@@ -153,45 +215,6 @@ export default function FileViewerContainer({
     setTotal,
     setPage,
   ]);
-
-  /* ---------------------------------------------------------- */
-  /*                       SELECTION                            */
-  /* ---------------------------------------------------------- */
-  const toggleSelect = useCallback(
-    (id: number, additive: boolean) =>
-      setSel((prev) => {
-        const next = new Set<number>(additive ? prev : []);
-        next.has(id) ? next.delete(id) : next.add(id);
-        return next;
-      }),
-    [setSel],
-  );
-  const clearSel     = () => setSel(new Set<number>());
-  const setExclusive = (id: number) => setSel(new Set<number>([id]));
-
-  /* ---------------------------------------------------------- */
-  /*                       LASSO SELECT                         */
-  /* ---------------------------------------------------------- */
-  const addModeRef = useRef(false);       // ← remembers ctrl/meta state
-
-  const {
-    boxStyle,
-    isVisible: lassoVisible,
-    onMouseDown: lassoDown,
-    registerTile,
-  } = useLasso(
-    (ids) =>
-      setSel((prev) => {
-        if (addModeRef.current) {
-          // additive union
-          const next = new Set(prev);
-          ids.forEach((id) => next.add(id));
-          return next;
-        }
-        return new Set(ids);              // replace selection normally
-      }),
-    containerRef,
-  );
 
   /* ---------------------------------------------------------- */
   /*                       ACTIONS                              */
@@ -264,7 +287,7 @@ export default function FileViewerContainer({
       setFiles((prev) => prev.filter((f) => !selectedIds.has(f.file_id)));
       setTotal((t) => t - selCount);
       clearSel();
-      setNeedsRefresh(true);        // refill page
+      setNeedsRefresh(true);
       push({ title: "Deleted", variant: "success" });
     } catch {
       push({ title: "Delete failed", variant: "error" });
@@ -332,11 +355,8 @@ export default function FileViewerContainer({
   /*                            UI                              */
   /* ---------------------------------------------------------- */
   return (
-    <AlertDialog.Root
-      open={deleteDialogOpen}
-      onOpenChange={setWantsDelete}
-    >
-      <div className="relative">
+    <AlertDialog.Root open={deleteDialogOpen} onOpenChange={setWantsDelete}>
+      <div ref={viewerRef} className="relative">
         {loading && files.length > 0 && (
           <FiLoader className="absolute top-0 right-0 w-4 h-4 animate-spin text-theme-600" />
         )}
@@ -388,7 +408,9 @@ export default function FileViewerContainer({
               </button>
             </>
           ) : (
-            <span className="opacity-0 select-none">placeholder</span>
+            <span className="opacity-0 select-none">
+              placeholder
+            </span>
           )}
         </div>
 
@@ -408,16 +430,23 @@ export default function FileViewerContainer({
               <div
                 ref={containerRef}
                 onClick={(e) => {
+                  /* ignore first click after lasso (mouseup) */
+                  if (didLassoRef.current) {
+                    didLassoRef.current = false;
+                    return;
+                  }
+                  /* blank click clears unless ctrl/meta held */
                   if (
-                    e.target === containerRef.current &&
-                    !(e.ctrlKey || e.metaKey)
-                  )
+                    !e.ctrlKey &&
+                    !e.metaKey &&
+                    !(e.target as HTMLElement | null)?.closest("[data-filetile]")
+                  ) {
                     clearSel();
+                  }
                 }}
                 onMouseDown={(e) => {
-                  addModeRef.current = e.ctrlKey || e.metaKey; // ← store mode
-                  if (!(e.ctrlKey || e.metaKey)) lassoDown(e);
-                  else lassoDown(e);                           // still start drag
+                  addModeRef.current = e.ctrlKey || e.metaKey;
+                  lassoDown(e);          // always begin drag
                 }}
                 className="relative min-h-[300px]"
               >
