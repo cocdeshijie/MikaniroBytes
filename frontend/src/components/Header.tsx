@@ -84,10 +84,11 @@ const MobileNavDialog = () => {
   const [isOpen, setIsOpen] = useAtom(dialogOpenAtom);
   const [regEnabled] = useAtom(regEnabledAtom);
   const pathname = usePathname();
-  const { isAuthenticated, logout } = useAuth();
+  const { isAuthenticated, logout, ready } = useAuth();
 
+  /* ↓ gate everything on `ready` so we never flash the wrong menu */
   const navItems = [{ title: "Home", href: "/" }];
-  if (isAuthenticated) {
+  if (ready && isAuthenticated) {
     navItems.push({ title: "Dashboard", href: "/dashboard" });
     navItems.push({ title: "Profile", href: "/profile" });
   }
@@ -114,68 +115,75 @@ const MobileNavDialog = () => {
             onClick={() => setIsOpen(false)}
             className="w-12 h-12 cursor-pointer mx-auto text-theme-500 dark:text-theme-300"
           />
-          <div className="flex flex-col space-y-3 mt-4">
-            {navItems.map((item) => (
-              <Link
-                key={item.title}
-                href={item.href}
-                onClick={() => setIsOpen(false)}
-                className={cn(
-                  "flex justify-between items-center w-full p-3 rounded-lg",
-                  "text-theme-900 dark:text-theme-100",
-                  isActive(pathname, item.href)
-                    ? "bg-theme-200 dark:bg-theme-700"
-                    : "hover:bg-theme-200/50 dark:hover:bg-theme-800/50"
-                )}
-              >
-                {item.title}
-              </Link>
-            ))}
-
-            {/* logout button (mobile) */}
-            {isAuthenticated && (
-              <button
-                onClick={handleLogout}
-                className={cn(
-                  "flex justify-between items-center w-full p-3 rounded-lg",
-                  "text-red-600 dark:text-red-500",
-                  "hover:bg-theme-200/50 dark:hover:bg-theme-800/50"
-                )}
-              >
-                Logout
-              </button>
-            )}
-
-            {/* login / register for guests (mobile) */}
-            {!isAuthenticated && (
-              <>
+          {/* wait for ready before showing auth-specific actions */}
+          {!ready ? (
+            <p className="text-center mt-6 text-theme-600 dark:text-theme-400">
+              Loading…
+            </p>
+          ) : (
+            <div className="flex flex-col space-y-3 mt-4">
+              {navItems.map((item) => (
                 <Link
-                  href="/auth/login"
+                  key={item.title}
+                  href={item.href}
                   onClick={() => setIsOpen(false)}
                   className={cn(
                     "flex justify-between items-center w-full p-3 rounded-lg",
                     "text-theme-900 dark:text-theme-100",
+                    isActive(pathname, item.href)
+                      ? "bg-theme-200 dark:bg-theme-700"
+                      : "hover:bg-theme-200/50 dark:hover:bg-theme-800/50"
+                  )}
+                >
+                  {item.title}
+                </Link>
+              ))}
+
+              {isAuthenticated && (
+                <button
+                  onClick={handleLogout}
+                  className={cn(
+                    "flex justify-between items-center w-full p-3 rounded-lg",
+                    "text-red-600 dark:text-red-500",
                     "hover:bg-theme-200/50 dark:hover:bg-theme-800/50"
                   )}
                 >
-                  Login
-                </Link>
-                {regEnabled && (
-                  <Link
-                    href="/auth/register"
-                    onClick={() => setIsOpen(false)}
-                    className={cn(
-                      "flex justify-between items-center w-full p-3 rounded-lg",
-                      "text-theme-900 dark:text-theme-100",
-                      "hover:bg-theme-200/50 dark:hover:bg-theme-800/50"
+                  Logout
+                </button>
+              )}
+
+              {!isAuthenticated && (
+                ready && (
+                  <>
+                    <Link
+                      href="/auth/login"
+                      onClick={() => setIsOpen(false)}
+                      className={cn(
+                        "flex justify-between items-center w-full p-3 rounded-lg",
+                        "text-theme-900 dark:text-theme-100",
+                        "hover:bg-theme-200/50 dark:hover:bg-theme-800/50"
+                      )}
+                    >
+                      Login
+                    </Link>
+                    {regEnabled && (
+                      <Link
+                        href="/auth/register"
+                        onClick={() => setIsOpen(false)}
+                        className={cn(
+                          "flex justify-between items-center w-full p-3 rounded-lg",
+                          "text-theme-900 dark:text-theme-100",
+                          "hover:bg-theme-200/50 dark:hover:bg-theme-800/50"
+                        )}
+                      >
+                        Register
+                      </Link>
                     )}
-                  >
-                    Register
-                  </Link>
-                )}
-              </>
-            )}
-          </div>
+                  </>
+                )
+              )}
+            </div>
+          )}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
@@ -189,40 +197,36 @@ const Header = () => {
   const [, setIsScrolled] = useAtom(scrollAtom);
   const [regEnabled, setRegEnabled] = useAtom(regEnabledAtom);
   const { theme, setTheme } = useTheme();
-  const { isAuthenticated, logout } = useAuth();
+  const { isAuthenticated, logout, ready } = useAuth();
   const pathname = usePathname();
 
   /* track scroll shadow */
   useEffect(() => {
-    const handleScroll = () => {
-      setIsScrolled(window.scrollY > 0);
-    };
+    const handleScroll = () => setIsScrolled(window.scrollY > 0);
     handleScroll();
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, [setIsScrolled]);
 
-  /* fetch public-registration switch once – via api() */
+  /* fetch public-registration switch once */
   useEffect(() => {
     (async () => {
       try {
-        const data = await api<{ enabled: boolean }>("/auth/registration-enabled");
-      setRegEnabled(Boolean(data.enabled));
-    } catch {
-      setRegEnabled(true); // fallback
-    }
+        const { enabled } = await api<{ enabled: boolean }>(
+          "/auth/registration-enabled"
+        );
+        setRegEnabled(Boolean(enabled));
+      } catch {
+        setRegEnabled(true); // fallback
+      }
     })();
   }, [setRegEnabled]);
 
   const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
 
-  const handleLogout = async () => {
-    await logout();
-  };
-
-  /* desktop centre nav */
-  const navItems = [{ title: "Home", href: "/" }];
-  if (isAuthenticated) {
+  /* desktop centre nav — build only when ready */
+  const navItems: { title: string; href: string }[] = [{ title: "Home", href: "/" }];
+  if (ready && isAuthenticated) {
     navItems.push({ title: "Dashboard", href: "/dashboard" });
     navItems.push({ title: "Profile", href: "/profile" });
   }
@@ -235,7 +239,7 @@ const Header = () => {
         "rounded-none md:rounded-xl shadow-md flex justify-between items-center"
       )}
     >
-      {/* Mobile hamburger */}
+      {/* Mobile burger */}
       <div className="md:hidden">
         <MobileNavDialog />
       </div>
@@ -247,25 +251,33 @@ const Header = () => {
 
       {/* Centre nav (desktop) */}
       <div className="hidden md:flex items-center justify-center flex-1">
-        <nav className="relative">
-          <ul className="flex justify-center items-center space-x-2">
-            {navItems.map((item) => (
-              <li key={item.title} className="relative">
-                <Link
-                  href={item.href}
-                  className={cn(
-                    "block px-6 py-2 rounded-lg font-medium transition-colors",
-                    isActive(pathname, item.href)
-                      ? "bg-theme-200 dark:bg-theme-700 text-theme-800 dark:text-white"
-                      : "text-theme-600 dark:text-theme-300 hover:bg-theme-200/70 dark:hover:bg-theme-800/70"
-                  )}
-                >
-                  {item.title}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </nav>
+        {!ready ? (
+          /* small placeholder — avoids layout shift */
+          <div className="flex gap-4">
+            <div className="h-4 w-16 bg-theme-200 dark:bg-theme-700 rounded animate-pulse" />
+            <div className="h-4 w-20 bg-theme-200 dark:bg-theme-700 rounded animate-pulse" />
+          </div>
+        ) : (
+          <nav className="relative">
+            <ul className="flex justify-center items-center space-x-2">
+              {navItems.map((item) => (
+                <li key={item.title} className="relative">
+                  <Link
+                    href={item.href}
+                    className={cn(
+                      "block px-6 py-2 rounded-lg font-medium transition-colors",
+                      isActive(pathname, item.href)
+                        ? "bg-theme-200 dark:bg-theme-700 text-theme-800 dark:text-white"
+                        : "text-theme-600 dark:text-theme-300 hover:bg-theme-200/70 dark:hover:bg-theme-800/70"
+                    )}
+                  >
+                    {item.title}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        )}
       </div>
 
       {/* Right-hand buttons */}
@@ -280,11 +292,13 @@ const Header = () => {
           {theme === "dark" ? <BiSun size={20} /> : <BiMoon size={20} />}
         </button>
 
-        {isAuthenticated  ? (
-          /* logged-in desktop buttons */
+        {/* wait for ready before choosing which auth buttons to show */}
+        {!ready ? (
+          <div className="hidden md:block h-8 w-20 rounded bg-theme-200 dark:bg-theme-700 animate-pulse" />
+        ) : isAuthenticated ? (
           <div className="hidden md:block">
             <button
-              onClick={handleLogout}
+              onClick={logout}
               className="px-4 py-2 bg-red-600 text-white rounded-full
                          hover:bg-red-700 transition-colors shadow-md"
             >
@@ -292,7 +306,6 @@ const Header = () => {
             </button>
           </div>
         ) : (
-          /* guest desktop buttons */
           <div className="hidden md:block">
             <div className="flex gap-2">
               <Link
