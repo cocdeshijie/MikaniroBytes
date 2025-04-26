@@ -58,8 +58,8 @@ const absolute = (link: string) =>
 /*            Calculate number of columns for 120-px tiles    */
 /* ---------------------------------------------------------- */
 function calcColumns(containerWidth = 0) {
-  const TILE = 120;                     // tile min-width + padding
-  const GAP  = 16;                      // Tailwind “gap-4”
+  const TILE = 120;
+  const GAP  = 16;
   const usable = containerWidth || window.innerWidth;
   return Math.max(1, Math.floor((usable + GAP) / (TILE + GAP)));
 }
@@ -91,7 +91,7 @@ export default function FileViewerContainer({
     useAtom(useMemo(wantsDeleteA, []));
   const [needsRefresh, setNeedsRefresh] = useAtom(filesNeedsRefreshAtom);
 
-  /* pagination */
+  /* pagination atoms */
   const [page,       setPage]  = useAtom(useMemo(pageA, []));
   const [totalItems, setTotal] = useAtom(useMemo(totalA, []));
   const [columns,    setCols]  = useAtom(useMemo(colsA, []));
@@ -116,7 +116,7 @@ export default function FileViewerContainer({
   /*                         FETCH LIST                         */
   /* ---------------------------------------------------------- */
   useEffect(() => {
-    if (!pageSize) return;                // wait for first measurement
+    if (!pageSize) return;
 
     setLoading(true);
     setErr("");
@@ -131,7 +131,6 @@ export default function FileViewerContainer({
         setFiles(data.items);
         setTotal(data.total);
 
-        // if page became empty (e.g. after deletions) step back
         if (!data.items.length && page > 1) {
           setPage((p) => p - 1);
         } else {
@@ -173,13 +172,24 @@ export default function FileViewerContainer({
   /* ---------------------------------------------------------- */
   /*                       LASSO SELECT                         */
   /* ---------------------------------------------------------- */
+  const addModeRef = useRef(false);       // ← remembers ctrl/meta state
+
   const {
     boxStyle,
     isVisible: lassoVisible,
     onMouseDown: lassoDown,
     registerTile,
   } = useLasso(
-    (ids) => setSel(new Set<number>(ids)),
+    (ids) =>
+      setSel((prev) => {
+        if (addModeRef.current) {
+          // additive union
+          const next = new Set(prev);
+          ids.forEach((id) => next.add(id));
+          return next;
+        }
+        return new Set(ids);              // replace selection normally
+      }),
     containerRef,
   );
 
@@ -240,7 +250,6 @@ export default function FileViewerContainer({
     }
   };
 
-  /* ---------- delete & refill page ---------- */
   async function batchDelete() {
     if (readOnly || !selCount) return;
 
@@ -252,13 +261,10 @@ export default function FileViewerContainer({
         json  : { ids: Array.from(selectedIds) },
       });
 
-      // optimistic local update
       setFiles((prev) => prev.filter((f) => !selectedIds.has(f.file_id)));
       setTotal((t) => t - selCount);
       clearSel();
-
-      /* mark viewer for refresh so the page is re-filled */
-      setNeedsRefresh(true);
+      setNeedsRefresh(true);        // refill page
       push({ title: "Deleted", variant: "success" });
     } catch {
       push({ title: "Delete failed", variant: "error" });
@@ -337,7 +343,7 @@ export default function FileViewerContainer({
 
         {title && <h4 className="text-lg font-medium mb-3">{title}</h4>}
 
-        {/* toolbar */}
+        {/* --------------------------- TOOLBAR --------------------------- */}
         <div className="mb-3 flex items-center gap-3 min-h-[34px]">
           {selCount ? (
             <>
@@ -393,7 +399,7 @@ export default function FileViewerContainer({
           </p>
         )}
 
-        {/* content */}
+        {/* --------------------------- CONTENT --------------------------- */}
         {loading && files.length === 0 ? (
           <SkeletonGrid />
         ) : (
@@ -409,7 +415,9 @@ export default function FileViewerContainer({
                     clearSel();
                 }}
                 onMouseDown={(e) => {
+                  addModeRef.current = e.ctrlKey || e.metaKey; // ← store mode
                   if (!(e.ctrlKey || e.metaKey)) lassoDown(e);
+                  else lassoDown(e);                           // still start drag
                 }}
                 className="relative min-h-[300px]"
               >
@@ -436,7 +444,7 @@ export default function FileViewerContainer({
               </div>
             </ContextMenu.Trigger>
 
-            {/* context menu */}
+            {/* ----------------------- CONTEXT MENU ----------------------- */}
             <ContextMenu.Portal>
               <ContextMenu.Content
                 className="min-w-[180px] bg-theme-50 dark:bg-theme-900 rounded-md
