@@ -47,19 +47,19 @@ def validate_upload(file_data: bytes, filename: str, group_settings: GroupSettin
     if group_settings.max_file_size is not None:
         if len(file_data) > group_settings.max_file_size:
             raise ExceedsSizeLimitError(
-                f"File size {len(file_data)} bytes exceeds limit {group_settings.max_file_size}."
+                f"File size {len(file_data)} bytes exceeds limit "
+                f"{group_settings.max_file_size}."
             )
 
     # 2) Enforce allowed_extensions
     exts = group_settings.allowed_extensions or []
-    if exts:  # not empty => must match
+    if exts:  # not empty ⇒ must match
         ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-        # Example: exts = ["jpg","png"]
-        # We do a case-insensitive check
         allowed_lower = [x.lower() for x in exts]
         if ext not in allowed_lower:
             raise ExtensionNotAllowedError(
-                f"File extension '.{ext}' is not allowed. Allowed list: {', '.join(exts)}"
+                f"File extension '.{ext}' is not allowed. "
+                f"Allowed list: {', '.join(exts)}"
             )
 
 
@@ -69,7 +69,7 @@ def validate_upload(file_data: bytes, filename: str, group_settings: GroupSettin
 def guess_file_type_by_extension(filename: str) -> FileType:
     """
     Very naive extension-based detection.
-    e.g. ".jpg" => FileType.IMAGE
+    e.g. ".jpg" → FileType.IMAGE
     Otherwise FileType.BASE
     """
     ext = filename.rsplit(".", 1)[-1].lower()
@@ -93,8 +93,7 @@ def render_path_template(template: str, now: datetime) -> str:
             .replace("{H}", now.strftime("%H"))
             .replace("{M}", now.strftime("%M"))
             .replace("{S}", now.strftime("%S"))
-            .strip("/")
-            .strip("\\")
+            .strip("/\\")
         )
     except Exception:
         return ""
@@ -111,28 +110,30 @@ def store_new_file(
     settings: Optional[SystemSettings] = None,
 ) -> FileModel:
     """
-    Core helper that:
-      1) Picks a subdirectory from *settings* (upload_path_template).
-      2) Saves the file to disk in /uploads/<subdir>.
-      3) Creates a DB row.
-      4) Returns the new FileModel.
-
-    If *owner_id* is None, the file has no assigned user (or guest user).
+    1) Picks a sub-directory from *settings* (upload_path_template).
+    2) Saves the file to disk in /uploads/<subdir>.
+    3) Creates a DB row.
+    4) Returns the new FileModel.
     """
     if not file_contents:
         raise ValueError("Empty file")
 
     # Choose sub-directory from template
-    # If no system_settings or no template, default to {Y}/{m}
-    template = settings.upload_path_template if (settings and settings.upload_path_template) else "{Y}/{m}"
+    template = (
+        settings.upload_path_template
+        if (settings and settings.upload_path_template)
+        else "{Y}/{m}"
+    )
     rel_dir = render_path_template(template, datetime.utcnow())
     target_dir = os.path.join(UPLOAD_DIR, rel_dir)
     os.makedirs(target_dir, exist_ok=True)
 
     # Build hashed file name
-    uniq = f"{original_filename}-{len(file_contents)}-{time.time()}-{secrets.token_hex(8)}"
+    uniq = (
+        f"{original_filename}-{len(file_contents)}-"
+        f"{time.time()}-{secrets.token_hex(8)}"
+    )
     hashed = hashlib.sha256(uniq.encode()).hexdigest()[:16]
-    # get extension
     _, ext = os.path.splitext(original_filename)
     hashed_name = hashed + ext.lower()
 
@@ -170,29 +171,45 @@ def store_file_from_archive(
     owner_id: Optional[int],
 ) -> FileModel:
     """
-    Bulk-specific function that preserves the ZIP/TAR subpath.
-    e.g. "assets/img/logo.png" => it writes /uploads/assets/img/logo.png
-    Overwrites if file already exists.
-    Creates a DB row & returns it.
+    Bulk-upload helper that **preserves** the path found inside the
+    ZIP/TAR file, e.g. "assets/img/logo.png" → uploads/assets/img/logo.png.
+
+    **Duplicate-file guard**
+    • If a file with the same relative path already exists on disk **or**
+      is already registered in the DB, raise `FileExistsError` so the
+      caller can treat it as a failed import instead of silently
+      overwriting data.
     """
     if not file_contents:
         raise ValueError("Empty file")
 
-    # Make sure archive_path doesn't start with / or ..
-    # for security reasons
+    # Make sure archive_path doesn't start with / or .. (security)
     safe_path = _sanitize_archive_path(archive_path)
     if not safe_path:
         raise ValueError(f"Invalid archive path: {archive_path}")
 
     final_abs_path = os.path.join(UPLOAD_DIR, safe_path)
+
+    # ── 1) Filesystem duplicate
+    if os.path.exists(final_abs_path):
+        raise FileExistsError(f"File already exists on disk: {safe_path}")
+
+    # ── 2) Database duplicate
+    existing_row = (
+        db.query(FileModel)
+        .filter(FileModel.storage_data["path"].as_string() == safe_path)
+        .first()
+    )
+    if existing_row:
+        raise FileExistsError(f"File already registered in DB: {safe_path}")
+
+    # Write the new file
     final_dir = os.path.dirname(final_abs_path)
     os.makedirs(final_dir, exist_ok=True)
-
-    # Overwrite if file already exists
     with open(final_abs_path, "wb") as out:
         out.write(file_contents)
 
-    # Store a DB row
+    # Store DB row
     db_file = FileModel(
         size=len(file_contents),
         file_type=FileType.BASE,
@@ -214,20 +231,21 @@ def store_file_from_archive(
 # ─────────────────────────────────────────────────────────────────────
 def _sanitize_archive_path(path_in_archive: str) -> str:
     """
-    Remove any leading slashes or '..' segments,
-    so we don't break out of the 'uploads' folder.
+    Remove any leading slashes or '..' segments so we never break out
+    of the uploads directory.
 
-    e.g.
-      "assets/img/logo.png" -> "assets/img/logo.png"
-      "/etc/passwd" -> "etc/passwd"
-      "../secret.txt" -> "secret.txt"
+    Examples
+    --------
+    "assets/img/logo.png" → "assets/img/logo.png"
+    "/etc/passwd"         → "etc/passwd"
+    "../secret.txt"       → "secret.txt"
     """
-    # Remove any leading slashes/backslashes:
+    # Remove leading slashes/backslashes
     p = path_in_archive.lstrip("/\\")
-    # Replace backslashes with forward slashes (if on Windows or if the archive had them)
+    # Normalise Windows paths in archives
     p = p.replace("\\", "/")
 
-    # Split path segments and remove '.' or '..'
+    # Remove '.' or '..' components
     parts = []
     for seg in p.split("/"):
         if seg in (".", "..", ""):
