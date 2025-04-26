@@ -1,0 +1,55 @@
+version: "3.9"
+
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: mikanirobytes
+      MYSQL_DATABASE:       mikanirobytes
+      MYSQL_USER:           mikanirobytes
+      MYSQL_PASSWORD:       mikanirobytes
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      # NOTE the double-$ soCompose doesn’t expand the vars
+      test: ["CMD","sh","-c","mysqladmin ping -h 127.0.0.1 -u$${MYSQL_USER} -p$${MYSQL_PASSWORD} --silent"]
+      interval: 10s
+      retries: 5
+    expose:
+      - "3306"
+
+  backend:
+    build:
+      context: ./backend          # ← stays inside ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      DB_HOST:     mysql
+      DB_PORT:     3306
+      DB_NAME:     mikanirobytes
+      DB_USER:     mikanirobytes
+      DB_PASSWORD: mikanirobytes   # (your code uses DB_PASSWORD)
+      SECRET_KEY:  please-change-me-now
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: runner
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_BACKEND_URL: http://backend:8000
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  mysql_data:
