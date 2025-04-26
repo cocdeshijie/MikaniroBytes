@@ -275,6 +275,9 @@ export default function FileViewerContainer({
     }
   };
 
+  /* ------------------------------------------------------------------
+     🔥 FIX: show a success toast after deleting files
+  ------------------------------------------------------------------ */
   async function batchDelete() {
     if (readOnly || !selCount) return;
 
@@ -285,6 +288,13 @@ export default function FileViewerContainer({
         token: sessionToken,
         json: { ids: Array.from(selectedIds) },
       });
+
+      /* ✅ SUCCESS TOAST (was missing before) */
+      push({
+        title: `Deleted ${selCount} file${selCount > 1 ? "s" : ""}`,
+        variant: "success",
+      });
+
       setNeedsRefresh(true); // triggers list refresh
     } catch {
       push({ title: "Delete failed", variant: "error" });
