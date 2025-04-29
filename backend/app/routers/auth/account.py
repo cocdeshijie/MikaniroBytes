@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy.orm import Session
 import uuid
 
@@ -29,6 +29,15 @@ class RegisterRequest(BaseModel):
     username: str
     email: EmailStr | None = None
     password: str
+
+    # Accept an empty string ("") and convert it to None so FastAPI
+    # won’t raise a 422 error when the field is left blank.
+    @field_validator("email", mode="before")
+    @classmethod
+    def _empty_to_none(cls, v):
+        if v in ("", None):
+            return None
+        return v
 
 
 class ChangePasswordRequest(BaseModel):
@@ -67,7 +76,6 @@ def login(
     user_agent = request.headers.get("User-Agent", "Unknown Agent")
     client_ip = request.client.host if request.client else None
 
-    # Optionally parse with 'user_agents' library for more detail
     device_info = user_agent[:120]  # store first 120 chars to avoid oversize
 
     new_session = UserSession(
@@ -118,7 +126,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     if existing_user:
         raise HTTPException(status_code=400, detail="Username already taken.")
 
-    # 3) Optional: check if email is used
+    # 3) Optional: check if email is used (only when user provided one)
     if payload.email:
         email_in_use = db.query(User).filter(User.email == payload.email).first()
         if email_in_use:
@@ -135,7 +143,6 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
         if default_group:
             group_id = default_group.id
     else:
-        # fallback logic: do we want "FREE_USER"? or "USERS"?
         fallback_group = (
             db.query(User.group.property.mapper.class_).filter_by(name="USERS").first()
         )
@@ -185,11 +192,9 @@ def change_password(
     """
     Change the current user's password, requiring old_password match.
     """
-    # verify old password
     if not verify_password(payload.old_password, current_user.hashed_password):
         raise HTTPException(status_code=400, detail="Incorrect old password.")
 
-    # update to new password
     current_user.hashed_password = hash_password(payload.new_password)
     db.add(current_user)
     db.commit()
@@ -214,16 +219,13 @@ def change_username(
 
     if not new_username:
         raise HTTPException(status_code=400, detail="Username cannot be empty.")
-
     if new_username == current_user.username:
         raise HTTPException(status_code=400, detail="That is already your username.")
 
-    # Reserved usernames, if any
     RESERVED = {"guest", "admin"}
     if new_username.lower() in RESERVED:
         raise HTTPException(status_code=400, detail="This username is reserved.")
 
-    # Check uniqueness
     dup = db.query(User).filter(User.username == new_username).first()
     if dup:
         raise HTTPException(status_code=400, detail="Username already taken.")
