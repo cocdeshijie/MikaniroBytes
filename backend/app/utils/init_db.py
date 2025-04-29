@@ -6,6 +6,7 @@ from app.db.models.group import Group
 from app.db.models.group_settings import GroupSettings
 from app.db.models.system_settings import SystemSettings
 from app.utils.security import hash_password
+from app.db.database import check_db_initialized
 
 
 def init_db(db: Session) -> None:
@@ -16,6 +17,12 @@ def init_db(db: Session) -> None:
     • Ensure at least one *normal* group (neither SUPER_ADMIN nor GUEST).
     • Ensure exactly one SystemSettings row (with valid fallback group).
     """
+    # Check if database is already initialized
+    if check_db_initialized():
+        print("Database already contains core tables - skipping initialization.")
+        return
+
+    print("Initializing database with default values...")
 
     # ------------------------------------------------------------------
     # 1) SUPER_ADMIN group
@@ -76,7 +83,7 @@ def init_db(db: Session) -> None:
 
     # ------------------------------------------------------------------
     # 4) Make sure **some** normal group exists
-    #     (“normal” = not SUPER_ADMIN and not GUEST)
+    #     ("normal" = not SUPER_ADMIN and not GUEST)
     # ------------------------------------------------------------------
     normal_group = (
         db.query(Group)

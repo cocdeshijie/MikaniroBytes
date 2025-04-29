@@ -5,7 +5,7 @@ services:
     image: mysql:8.0
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: mikanirobytes
+      MYSQL_ROOT_PASSWORD:  mikanirobytes
       MYSQL_DATABASE:       mikanirobytes
       MYSQL_USER:           mikanirobytes
       MYSQL_PASSWORD:       mikanirobytes
@@ -23,6 +23,7 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
+      DB_ENGINE:   mysql
       DB_HOST:     mysql
       DB_PORT:     3306
       DB_NAME:     mikanirobytes
