@@ -25,8 +25,8 @@ def init_db(db: Session) -> None:
         super_admin_group = Group(name="SUPER_ADMIN")
         super_admin_group.settings = GroupSettings(
             allowed_extensions=[],
-            max_file_size=None,
-            max_storage_size=None,
+            max_file_size=0,
+            max_storage_size=0,
         )
         db.add(super_admin_group)
         db.commit()
@@ -56,8 +56,8 @@ def init_db(db: Session) -> None:
         guest_group = Group(name="GUEST")
         guest_group.settings = GroupSettings(
             allowed_extensions=["jpg", "png", "gif", "pdf"],
-            max_file_size=5 * 1024 * 1024,           # 5 MB in binary
-            max_storage_size=10 * 1024 * 1024 * 1024  # 10 GB in binary
+            max_file_size=5 * 1024 * 1024,           # 5 MB
+            max_storage_size=10 * 1024 * 1024 * 1024  # 10 GB
         )
         db.add(guest_group)
         db.commit()
@@ -90,8 +90,8 @@ def init_db(db: Session) -> None:
         normal_group = Group(name="USERS")
         normal_group.settings = GroupSettings(
             allowed_extensions=[],
-            max_file_size=10 * 1024 * 1024,       # 10 MB in binary
-            max_storage_size=1 * 1024 * 1024 * 1024,   # 1 GB in binary
+            max_file_size=10 * 1024 * 1024,       # 10 MB
+            max_storage_size=1 * 1024 * 1024 * 1024,   # 1 GB
         )
         db.add(normal_group)
         db.commit()
