@@ -6,7 +6,6 @@ from app.db.models.group import Group
 from app.db.models.group_settings import GroupSettings
 from app.db.models.system_settings import SystemSettings
 from app.utils.security import hash_password
-from app.db.database import check_db_initialized
 
 
 def init_db(db: Session) -> None:
@@ -18,11 +17,11 @@ def init_db(db: Session) -> None:
     • Ensure exactly one SystemSettings row (with valid fallback group).
     """
     # Check if database is already initialized
-    if check_db_initialized():
-        print("Database already contains core tables - skipping initialization.")
+    if db.query(Group).count() > 0:
+        print("Database already initialised – skipping bootstrap.")
         return
 
-    print("Initializing database with default values...")
+    print("Initialising database with default values…")
 
     # ------------------------------------------------------------------
     # 1) SUPER_ADMIN group
