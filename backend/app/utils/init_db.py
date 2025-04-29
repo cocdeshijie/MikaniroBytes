@@ -25,8 +25,8 @@ def init_db(db: Session) -> None:
         super_admin_group = Group(name="SUPER_ADMIN")
         super_admin_group.settings = GroupSettings(
             allowed_extensions=[],
-            max_file_size=0,
-            max_storage_size=0,
+            max_file_size=None,  # unlimited
+            max_storage_size=None,  # unlimited
         )
         db.add(super_admin_group)
         db.commit()

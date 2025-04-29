@@ -15,7 +15,7 @@ class GroupSettings(Base):
     # “mutable default” foot‑gun when someone mutates the list in place.
     allowed_extensions = Column(SQLiteJSON, default=list)
 
-    max_file_size = Column(BigInteger, default=10_000_000)      # bytes
+    max_file_size = Column(BigInteger, nullable=True)      # bytes
     max_storage_size = Column(BigInteger, nullable=True)        # None => unlimited
 
     group = relationship("Group", back_populates="settings")
