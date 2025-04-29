@@ -34,6 +34,7 @@ services:
         condition: service_healthy
     volumes:
       - uploads:/app/uploads
+      - previews:/app/previews
     expose: ["8000"]
 
   frontend:
@@ -63,3 +64,4 @@ services:
 volumes:
   mysql_data:
   uploads:
+  reviews:
