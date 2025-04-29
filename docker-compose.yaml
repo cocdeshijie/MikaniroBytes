@@ -42,7 +42,7 @@ services:
       dockerfile: Dockerfile
       target: runner
       args:
-        NEXT_PUBLIC_BACKEND_URL: http://localhost
+        NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL}
         NODE_ENV: production
     restart: unless-stopped
     expose: ["3000"]
