@@ -11,6 +11,12 @@ import { api } from "@/lib/api";
 import { useToast } from "@/lib/toast";
 import { useAuth } from "@/lib/auth";
 import { userInfoAtom, type UserInfo } from "@/atoms/auth";
+import {
+  FiMonitor,
+  FiSmartphone,
+  FiTablet,
+  FiHelpCircle,
+} from "react-icons/fi";
 
 /* ------------------------------------------------------------------ */
 /*                          LOCAL-ONLY ATOMS                          */
@@ -24,31 +30,31 @@ interface SessionItem {
   last_accessed: string;
 }
 
-const sessionsAtom   = atom<SessionItem[]>([]);
-const loadingAtom    = atom(false);
-const errorAtom      = atom("");
-const fetchedAtom    = atom(false);
+const sessionsAtom = atom<SessionItem[]>([]);
+const loadingAtom = atom(false);
+const errorAtom = atom("");
+const fetchedAtom = atom(false);
 
-const oldPwA         = atom("");
-const newPwA         = atom("");
+const oldPwA = atom("");
+const newPwA = atom("");
 
 /* NEW atoms for username change */
-const newNameA       = atom("");
-const nameErrA       = atom("");
+const newNameA = atom("");
+const nameErrA = atom("");
 
 /* =================================================================== */
 /*                              COMPONENT                              */
 /* =================================================================== */
 export default function ProfilePage() {
-  const router   = useRouter();
+  const router = useRouter();
   const { push } = useToast();
   const { isAuthenticated, token, ready, userInfo } = useAuth();
 
-  const [, setUserInfo]         = useAtom(userInfoAtom);
+  const [, setUserInfo] = useAtom(userInfoAtom);
   const [sessions, setSessions] = useAtom(sessionsAtom);
-  const [, setLoading]          = useAtom(loadingAtom);
-  const [errorMsg, setError]    = useAtom(errorAtom);
-  const [fetched, setFetched]   = useAtom(fetchedAtom);
+  const [, setLoading] = useAtom(loadingAtom);
+  const [errorMsg, setError] = useAtom(errorAtom);
+  const [fetched, setFetched] = useAtom(fetchedAtom);
 
   const [oldPw, setOldPw] = useAtom(oldPwA);
   const [newPw, setNewPw] = useAtom(newPwA);
@@ -113,6 +119,16 @@ export default function ProfilePage() {
     setSessions,
     setFetched,
   ]);
+
+  /* ---------- helper: choose icon based on client name ------------- */
+  const iconForClient = (name?: string) => {
+    if (!name) return FiHelpCircle;
+    const n = name.toLowerCase();
+    if (/(iphone|android|mobile)/.test(n)) return FiSmartphone;
+    if (/(ipad|tablet)/.test(n)) return FiTablet;
+    if (/(windows|mac|linux|desktop)/.test(n)) return FiMonitor;
+    return FiHelpCircle;
+  };
 
   /* ---------- UX paths --------------------------------------------- */
   if (!ready) {
@@ -216,6 +232,7 @@ export default function ProfilePage() {
           sessions={sessions}
           revokeSession={revokeSession}
           revokeAll={revokeAll}
+          iconForClient={iconForClient}
         />
       </div>
     </PageFrame>
@@ -336,9 +353,9 @@ function LeftColumn({
           <CardHeading>Account Information</CardHeading>
           {userInfo ? (
             <div className="space-y-4">
-              <InfoRow label="User ID"   value={userInfo.id} />
-              <InfoRow label="Username"  value={userInfo.username} />
-              <InfoRow label="Email"     value={userInfo.email || "(none)"} />
+              <InfoRow label="User ID" value={userInfo.id} />
+              <InfoRow label="Username" value={userInfo.username} />
+              <InfoRow label="Email" value={userInfo.email || "(none)"} />
             </div>
           ) : (
             <p className="italic text-theme-600 dark:text-theme-400">No info.</p>
@@ -418,15 +435,17 @@ function LeftColumn({
   );
 }
 
-/* ---------- right column (unchanged) ------------------------------ */
+/* ---------- right column ------------------------------------------- */
 function RightColumn({
   sessions,
   revokeSession,
   revokeAll,
+  iconForClient,
 }: {
   sessions: SessionItem[];
   revokeSession: (id: number) => void;
   revokeAll: () => void;
+  iconForClient: (name?: string) => React.ComponentType<{ className?: string }>;
 }) {
   return (
     <div className="md:col-span-8">
@@ -452,45 +471,59 @@ function RightColumn({
 
           {sessions.length ? (
             <ul className="space-y-4">
-              {sessions.map((s) => (
-                <li
-                  key={s.session_id}
-                  className={cn(
-                    "border border-theme-200/50 dark:border-theme-800/50 rounded-lg",
-                    "p-4 bg-theme-100/25 dark:bg-theme-900/25 transition-all duration-200",
-                    "hover:shadow-md",
-                  )}
-                >
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    {/* details */}
-                    <div className="space-y-2 flex-1">
-                      <InfoRow
-                        label="Token"
-                        value={<span className="font-mono">{s.token.slice(0, 20)}…</span>}
-                      />
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-                        <InfoRow label="Device"      value={s.client_name || "Unknown"} />
-                        <InfoRow label="IP Address"  value={s.ip_address  || "N/A"} />
-                        <InfoRow label="Created"     value={new Date(s.created_at).toLocaleString()} />
-                        <InfoRow label="Last Access" value={new Date(s.last_accessed).toLocaleString()} />
+              {sessions.map((s) => {
+                const Icon = iconForClient(s.client_name);
+                return (
+                  <li
+                    key={s.session_id}
+                    className={cn(
+                      "border border-theme-200/50 dark:border-theme-800/50 rounded-lg",
+                      "p-4 bg-theme-100/25 dark:bg-theme-900/25 transition-all duration-200",
+                      "hover:shadow-md",
+                    )}
+                  >
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      {/* details */}
+                      <div className="space-y-2 flex-1">
+                        {/* Device row with icon */}
+                        <InfoRow
+                          label="Device"
+                          value={
+                            <span className="flex items-center gap-2">
+                              <Icon className="w-4 h-4" />
+                              {s.client_name || "Unknown"}
+                            </span>
+                          }
+                        />
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+                          <InfoRow label="IP Address" value={s.ip_address || "N/A"} />
+                          <InfoRow
+                            label="Created"
+                            value={new Date(s.created_at).toLocaleString()}
+                          />
+                          <InfoRow
+                            label="Last Access"
+                            value={new Date(s.last_accessed).toLocaleString()}
+                          />
+                        </div>
+                      </div>
+                      {/* revoke */}
+                      <div className="md:self-center">
+                        <button
+                          onClick={() => revokeSession(s.session_id)}
+                          className={cn(
+                            "py-1.5 px-4 rounded-lg bg-red-500/80 hover:bg-red-600",
+                            "text-white text-sm font-medium shadow shadow-red-500/10",
+                            "transition-all duration-200",
+                          )}
+                        >
+                          Logout
+                        </button>
                       </div>
                     </div>
-                    {/* revoke */}
-                    <div className="md:self-center">
-                      <button
-                        onClick={() => revokeSession(s.session_id)}
-                        className={cn(
-                          "py-1.5 px-4 rounded-lg bg-red-500/80 hover:bg-red-600",
-                          "text-white text-sm font-medium shadow shadow-red-500/10",
-                          "transition-all duration-200",
-                        )}
-                      >
-                        Logout
-                      </button>
-                    </div>
-                  </div>
-                </li>
-              ))}
+                  </li>
+                );
+              })}
             </ul>
           ) : (
             <EmptyState>No active sessions found.</EmptyState>
