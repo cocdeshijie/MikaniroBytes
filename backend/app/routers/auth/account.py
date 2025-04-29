@@ -36,13 +36,19 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
 
 
+class ChangeUsernameRequest(BaseModel):
+    new_username: str
+
+
 # ────────────────────────────────────────────────────────────────────
 #  Auth routes (login, logout, register, user info, etc.)
 # ────────────────────────────────────────────────────────────────────
 @router.post("/login")
-def login(payload: LoginRequest,
-          request: Request,
-          db: Session = Depends(get_db)):
+def login(
+    payload: LoginRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
     """
     Basic login with username and password.
     Stores session token plus device/browser info in user_sessions table.
@@ -121,15 +127,18 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     # 4) Figure out which group to put them in
     group_id = None
     if system_settings and system_settings.default_user_group_id:
-        default_group = db.query(
-            User.group.property.mapper.class_) \
-            .filter_by(id=system_settings.default_user_group_id).first()
+        default_group = (
+            db.query(User.group.property.mapper.class_)
+            .filter_by(id=system_settings.default_user_group_id)
+            .first()
+        )
         if default_group:
             group_id = default_group.id
     else:
         # fallback logic: do we want "FREE_USER"? or "USERS"?
-        fallback_group = db.query(User.group.property.mapper.class_) \
-                           .filter_by(name="USERS").first()
+        fallback_group = (
+            db.query(User.group.property.mapper.class_).filter_by(name="USERS").first()
+        )
         if fallback_group:
             group_id = fallback_group.id
 
@@ -168,9 +177,11 @@ def get_me(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/change-password")
-def change_password(payload: ChangePasswordRequest,
-                    current_user: User = Depends(get_current_user),
-                    db: Session = Depends(get_db)):
+def change_password(
+    payload: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
     Change the current user's password, requiring old_password match.
     """
@@ -185,3 +196,44 @@ def change_password(payload: ChangePasswordRequest,
     db.refresh(current_user)
 
     return {"detail": "Password changed successfully"}
+
+
+# ────────────────────────────────────────────────────────────────────
+#  Change username
+# ────────────────────────────────────────────────────────────────────
+@router.post("/change-username")
+def change_username(
+    payload: ChangeUsernameRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Let an authenticated user pick a new username (must be unique).
+    """
+    new_username = payload.new_username.strip()
+
+    if not new_username:
+        raise HTTPException(status_code=400, detail="Username cannot be empty.")
+
+    if new_username == current_user.username:
+        raise HTTPException(status_code=400, detail="That is already your username.")
+
+    # Reserved usernames, if any
+    RESERVED = {"guest", "admin"}
+    if new_username.lower() in RESERVED:
+        raise HTTPException(status_code=400, detail="This username is reserved.")
+
+    # Check uniqueness
+    dup = db.query(User).filter(User.username == new_username).first()
+    if dup:
+        raise HTTPException(status_code=400, detail="Username already taken.")
+
+    current_user.username = new_username
+    db.add(current_user)
+    db.commit()
+    db.refresh(current_user)
+
+    return {
+        "detail": "Username changed successfully",
+        "username": current_user.username,
+    }

@@ -24,13 +24,17 @@ interface SessionItem {
   last_accessed: string;
 }
 
-const sessionsAtom = atom<SessionItem[]>([]);
-const loadingAtom  = atom(false);
-const errorAtom    = atom("");
-const fetchedAtom  = atom(false);
+const sessionsAtom   = atom<SessionItem[]>([]);
+const loadingAtom    = atom(false);
+const errorAtom      = atom("");
+const fetchedAtom    = atom(false);
 
-const oldPwA = atom("");
-const newPwA = atom("");
+const oldPwA         = atom("");
+const newPwA         = atom("");
+
+/* NEW atoms for username change */
+const newNameA       = atom("");
+const nameErrA       = atom("");
 
 /* =================================================================== */
 /*                              COMPONENT                              */
@@ -40,14 +44,18 @@ export default function ProfilePage() {
   const { push } = useToast();
   const { isAuthenticated, token, ready, userInfo } = useAuth();
 
-  const [, setUserInfo]          = useAtom(userInfoAtom);
-  const [sessions, setSessions]  = useAtom(sessionsAtom);
-  const [,  setLoading]   = useAtom(loadingAtom);
-  const [errorMsg, setError]     = useAtom(errorAtom);
-  const [fetched,  setFetched]   = useAtom(fetchedAtom);
+  const [, setUserInfo]         = useAtom(userInfoAtom);
+  const [sessions, setSessions] = useAtom(sessionsAtom);
+  const [, setLoading]          = useAtom(loadingAtom);
+  const [errorMsg, setError]    = useAtom(errorAtom);
+  const [fetched, setFetched]   = useAtom(fetchedAtom);
 
   const [oldPw, setOldPw] = useAtom(oldPwA);
   const [newPw, setNewPw] = useAtom(newPwA);
+
+  /* new-username state */
+  const [newName, setNewName] = useAtom(newNameA);
+  const [nameErr, setNameErr] = useAtom(nameErrA);
 
   /* ---------- shared skeleton (memoised) --------------------------- */
   const Skeleton = useMemo(
@@ -160,12 +168,44 @@ export default function ProfilePage() {
     }
   };
 
+  /* ---------- NEW: change username -------------------------------- */
+  const changeUsername = async (e: FormEvent) => {
+    e.preventDefault();
+    setNameErr("");
+    if (!newName.trim() || newName.trim() === userInfo?.username) {
+      setNameErr("Enter a different username.");
+      return;
+    }
+    try {
+      const updated = await api<{ username: string }>("/auth/change-username", {
+        method: "POST",
+        token,
+        json: { new_username: newName.trim() },
+      });
+      /* update global store so header etc. refresh */
+      setUserInfo((u) => (u ? { ...u, username: updated.username } : u));
+      push({ title: "Username updated", variant: "success" });
+      setNewName("");
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Username change failed";
+      setNameErr(msg);
+      push({ title: "Update failed", description: msg, variant: "error" });
+    }
+  };
+
   /* ---------- FINAL RENDER ----------------------------------------- */
   return (
     <PageFrame headerError={errorMsg}>
       <div className="md:grid md:grid-cols-12 md:gap-6">
         <LeftColumn
           userInfo={userInfo}
+          /* username change props */
+          newName={newName}
+          setNewName={setNewName}
+          nameErr={nameErr}
+          changeUsername={changeUsername}
+          /* password change props */
           oldPw={oldPw}
           newPw={newPw}
           setOldPw={setOldPw}
@@ -263,6 +303,12 @@ function Header({ errorMsg }: { errorMsg: string }) {
 /* ---------- left column ------------------------------------------- */
 function LeftColumn({
   userInfo,
+  /* username props */
+  newName,
+  setNewName,
+  nameErr,
+  changeUsername,
+  /* password props */
   oldPw,
   newPw,
   setOldPw,
@@ -270,6 +316,12 @@ function LeftColumn({
   changePw,
 }: {
   userInfo: UserInfo | null;
+  /* username */
+  newName: string;
+  setNewName: (v: string) => void;
+  nameErr: string;
+  changeUsername: (e: FormEvent) => void;
+  /* password */
   oldPw: string;
   newPw: string;
   setOldPw: (v: string) => void;
@@ -291,6 +343,46 @@ function LeftColumn({
           ) : (
             <p className="italic text-theme-600 dark:text-theme-400">No info.</p>
           )}
+        </div>
+      </div>
+
+      {/* change username */}
+      <div className={cardCls}>
+        <div className="p-5">
+          <CardHeading>Change Username</CardHeading>
+          <form onSubmit={changeUsername} className="space-y-4">
+            <div>
+              <label className="block mb-2 text-sm font-medium text-theme-700 dark:text-theme-300">
+                New Username
+              </label>
+              <input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                className={cn(
+                  "w-full px-4 py-2 rounded-lg",
+                  "bg-theme-100/50 dark:bg-theme-800/50",
+                  "border border-theme-200 dark:border-theme-700",
+                  "focus:ring-2 focus:ring-theme-500/50 focus:outline-none",
+                  "text-theme-900 dark:text-theme-100",
+                )}
+              />
+              {nameErr && (
+                <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  {nameErr}
+                </p>
+              )}
+            </div>
+            <button
+              type="submit"
+              className={cn(
+                "w-full py-2 px-6 rounded-lg bg-theme-500 hover:bg-theme-600",
+                "text-white font-medium shadow-md shadow-theme-500/20",
+                "transition-all duration-200 transform hover:-translate-y-0.5",
+              )}
+            >
+              Update Username
+            </button>
+          </form>
         </div>
       </div>
 
@@ -326,7 +418,7 @@ function LeftColumn({
   );
 }
 
-/* ---------- right column ------------------------------------------ */
+/* ---------- right column (unchanged) ------------------------------ */
 function RightColumn({
   sessions,
   revokeSession,
