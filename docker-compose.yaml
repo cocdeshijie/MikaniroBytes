@@ -54,7 +54,7 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - uploads:/uploads:ro
     ports:
-      - "80:80"
+      - "12171:80"
     depends_on:
       - frontend
       - backend
